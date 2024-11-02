@@ -1,7 +1,48 @@
 // models/gameLogic.js
 const { evaluateBoard } = require('../utils/evaluation');
 
+function cloneGame(game) {
+    console.log('Cloning game state.');
+    const newGame = exports.createGame();
+    newGame.board = JSON.parse(JSON.stringify(game.board));
+    newGame.turn = game.turn;
+    newGame.moveHistory = [...game.moveHistory];
+    return newGame;
+}
+function isValidPosition(x, y) {
+    return x >= 0 && x < 6 && y >= 0 && y < 5;
+}
+
+function isCheck(game) {
+    console.log('Checking for check status.');
+    const turn = game.turn;
+    let kingPos = null;
+
+    // Find king position
+    for (let i = 0; i < 6; i++) {
+        for (let j = 0; j < 5; j++) {
+            const piece = game.board[i][j];
+            if ((turn === 'w' && piece === 'K') || (turn === 'b' && piece === 'k')) {
+                kingPos = [i, j];
+                break;
+            }
+        }
+        if (kingPos) break;
+    }
+
+    // Switch turn to check opponent's moves
+    game.turn = turn === 'w' ? 'b' : 'w';
+    const opponentMoves = generateMoves(game);
+    game.turn = turn; // Switch back
+
+    // Check if any opponent move can capture the king
+    return opponentMoves.some(move => 
+        move.to[0] === kingPos[0] && move.to[1] === kingPos[1]
+    );
+}
+
 exports.createGame = () => {
+    console.log('Creating a new game.');
     return {
         board: [
             ['r', 'n', 'b', 'q', 'k'],
@@ -14,52 +55,97 @@ exports.createGame = () => {
         turn: 'w',
         moveHistory: [],
         makeMove(move) {
-            if (!Array.isArray(move.from) || !Array.isArray(move.to) || move.from.length !== 2 || move.to.length !== 2) {
+            console.log(`Making move from ${move.from} to ${move.to}.`);
+            // Validate move format
+            if (!Array.isArray(move.from) || !Array.isArray(move.to) || 
+                move.from.length !== 2 || move.to.length !== 2) {
                 throw new Error('Invalid move format. Use { from: [x, y], to: [x, y] }.');
             }
+
             const [fromX, fromY] = move.from;
             const [toX, toY] = move.to;
-            if (fromX < 0 || fromY < 0 || toX < 0 || toY < 0 || fromX >= 6 || fromY >= 5 || toX >= 6 || toY >= 5) {
+
+            // Validate boundaries
+            if (!isValidPosition(fromX, fromY) || !isValidPosition(toX, toY)) {
                 throw new Error('Move out of bounds.');
             }
+
             const piece = this.board[fromX][fromY];
-            if (piece === '.' || (this.turn === 'w' && piece.toLowerCase() === piece) || (this.turn === 'b' && piece.toUpperCase() === piece)) {
-                throw new Error('Invalid move: no valid piece at the source or move not allowed for the current player.');
-            }
             
-            // Validate move legality
-            const validMoves = generatePieceMoves(this, [fromX, fromY]);
-            const isValidMove = validMoves.some(m => m.to[0] === toX && m.to[1] === toY);
-            if (!isValidMove) {
-                throw new Error('Invalid move: the move is not legal for the selected piece.');
+            // Validate piece ownership
+            if (piece === '.' || 
+                (this.turn === 'w' && piece.toLowerCase() === piece) || 
+                (this.turn === 'b' && piece.toUpperCase() === piece)) {
+                throw new Error('Invalid piece selection.');
             }
 
-            // Execute the move
+            // Validate move legality
+            const validMoves = generatePieceMoves(this, [fromX, fromY]);
+            const isValidMove = validMoves.some(m => 
+                m.to[0] === toX && m.to[1] === toY
+            );
+
+            if (!isValidMove) {
+                throw new Error('Invalid move for this piece.');
+            }
+
+            // Make move temporarily
+            const originalPiece = this.board[toX][toY];
             this.board[toX][toY] = piece;
             this.board[fromX][fromY] = '.';
-            this.moveHistory.push({ from: move.from, to: move.to, piece });
+
+            // Check if move puts/leaves own king in check
+            if (isCheck(this)) {
+                console.log('Move puts king in check. Undoing move.');
+                // Undo move
+                this.board[fromX][fromY] = piece;
+                this.board[toX][toY] = originalPiece;
+                throw new Error('Move would put or leave king in check.');
+            }
+
+            // Record move
+            this.moveHistory.push({
+                from: move.from,
+                to: move.to,
+                piece: piece,
+                captured: originalPiece !== '.'
+            });
+
+            // Change turn
             this.turn = this.turn === 'w' ? 'b' : 'w';
+            console.log('Turn changed to:', this.turn);
         },
         isGameOver() {
+            console.log('Checking if the game is over.');
             return this.checkmate() || this.stalemate() || this.draw();
         },
         checkmate() {
-            
-            return false; // Placeholder
+            console.log('Checking for checkmate.');
+            if (!isCheck(this)) return false;
+            return generateMoves(this).length === 0;
         },
         stalemate() {
-           
-            return false; // Placeholder
+            console.log('Checking for stalemate.');
+            if (isCheck(this)) return false;
+            return generateMoves(this).length === 0;
         },
         draw() {
-          
-            return false; // Placeholder
+            console.log('Checking for draw.');
+            // Implement basic draw conditions: insufficient material, threefold repetition, etc.
+            // For simplicity, checking only insufficient material
+            const material = this.board.flat().filter(piece => piece !== '.').map(piece => piece.toLowerCase());
+            const uniquePieces = [...new Set(material)];
+            if (uniquePieces.length === 1 && (uniquePieces[0] === 'k' || uniquePieces[0] === 'n' || uniquePieces[0] === 'b')) {
+                return true; // Insufficient material (e.g., king vs. king, king vs. king and knight, etc.)
+            }
+            return false;
         }
     };
 };
 
 exports.makeMove = (boardState, move) => {
     try {
+        console.log('Making move with board state:', boardState, 'and move:', move);
         if (!Array.isArray(boardState) || boardState.length !== 6 || !Array.isArray(boardState[0]) || boardState[0].length !== 5) {
             throw new Error('Invalid board state format. Ensure it is a 6x5 array.');
         }
@@ -74,6 +160,7 @@ exports.makeMove = (boardState, move) => {
 };
 
 exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizingPlayer = true) => {
+    console.log(`Running minimax at depth ${depth} for ${maximizingPlayer ? 'maximizing' : 'minimizing'} player.`);
     if (depth <= 0 || game.isGameOver()) {
         return { score: evaluateBoard(game) };
     }
@@ -99,6 +186,7 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
         return { score: maxEval, bestMove };
     } else {
         let minEval = Infinity;
+        let bestMove = null;
         const moves = generateMoves(game);
         for (const move of moves) {
             const gameCopy = JSON.parse(JSON.stringify(game));
@@ -115,8 +203,8 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
         return { score: minEval };
     }
 };
-
 function generateMoves(game) {
+    console.log('Generating moves for the current game state.');
     const moves = [];
     for (let i = 0; i < 6; i++) {
         for (let j = 0; j < 5; j++) {
@@ -126,6 +214,7 @@ function generateMoves(game) {
             }
         }
     }
+    console.log(`Total moves generated: ${moves.length}`);
     return moves;
 }
 
@@ -154,6 +243,7 @@ function generatePieceMoves(game, position) {
             moves.push(...generateKingMoves(game, position));
             break;
     }
+    console.log(`Generated ${moves.length} moves for piece ${piece} at position ${position}.`);
     return moves;
 }
 
@@ -165,12 +255,14 @@ function generatePawnMoves(game, position) {
     // Single move forward
     if (x + direction >= 0 && x + direction < 6 && game.board[x + direction][y] === '.') {
         moves.push({ from: position, to: [x + direction, y] });
+        console.log(`Pawn move to [${x + direction}, ${y}] added.`);
     }
 
     // Double move from starting position
     if ((game.turn === 'w' && x === 4) || (game.turn === 'b' && x === 1)) {
         if (x + 2 * direction >= 0 && x + 2 * direction < 6 && game.board[x + 2 * direction][y] === '.') {
             moves.push({ from: position, to: [x + 2 * direction, y] });
+            console.log(`Pawn double move to [${x + 2 * direction}, ${y}] added.`);
         }
     }
 
@@ -180,12 +272,14 @@ function generatePawnMoves(game, position) {
             const target = game.board[x + direction][y + side];
             if (target !== '.' && ((game.turn === 'w' && target === target.toLowerCase()) || (game.turn === 'b' && target === target.toUpperCase()))) {
                 moves.push({ from: position, to: [x + direction, y + side] });
+                console.log(`Pawn capture move to [${x + direction}, ${y + side}] added.`);
             }
         }
     }
 
     return moves;
 }
+
 function generateKnightMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -201,6 +295,7 @@ function generateKnightMoves(game, position) {
             const target = game.board[nx][ny];
             if (target === '.' || (game.turn === 'w' && target === target.toLowerCase()) || (game.turn === 'b' && target === target.toUpperCase())) {
                 moves.push({ from: position, to: [nx, ny] });
+                console.log(`Knight move to [${nx}, ${ny}] added.`);
             }
         }
     }
@@ -220,9 +315,11 @@ function generateBishopMoves(game, position) {
             const target = game.board[nx][ny];
             if (target === '.') {
                 moves.push({ from: position, to: [nx, ny] });
+                console.log(`Bishop move to [${nx}, ${ny}] added.`);
             } else {
                 if ((game.turn === 'w' && target === target.toLowerCase()) || (game.turn === 'b' && target === target.toUpperCase())) {
                     moves.push({ from: position, to: [nx, ny] });
+                    console.log(`Bishop capture move to [${nx}, ${ny}] added.`);
                 }
                 break;
             }
@@ -246,9 +343,11 @@ function generateRookMoves(game, position) {
             const target = game.board[nx][ny];
             if (target === '.') {
                 moves.push({ from: position, to: [nx, ny] });
+                console.log(`Rook move to [${nx}, ${ny}] added.`);
             } else {
                 if ((game.turn === 'w' && target === target.toLowerCase()) || (game.turn === 'b' && target === target.toUpperCase())) {
                     moves.push({ from: position, to: [nx, ny] });
+                    console.log(`Rook capture move to [${nx}, ${ny}] added.`);
                 }
                 break;
             }
@@ -279,6 +378,7 @@ function generateKingMoves(game, position) {
             const target = game.board[nx][ny];
             if (target === '.' || (game.turn === 'w' && target === target.toLowerCase()) || (game.turn === 'b' && target === target.toUpperCase())) {
                 moves.push({ from: position, to: [nx, ny] });
+                console.log(`King move to [${nx}, ${ny}] added.`);
             }
         }
     }
