@@ -57,11 +57,4 @@ Minichess is a simplified, shorter version of Chess played on a 6 x 5 board. Thi
 ## Version Control
 
 - The project must be maintained in a Git repository to track changes, facilitate collaboration, and ensure version control.
-
-## Conclusion
-
-This project combines strategic AI development with practical implementation of search algorithms and user interface design, creating a comprehensive AI program capable of playing Minichess effectively.
-
-
-
-
+ 
