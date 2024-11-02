@@ -44,15 +44,15 @@ exports.createGame = () => {
             return this.checkmate() || this.stalemate() || this.draw();
         },
         checkmate() {
-            // Implement checkmate logic
+            
             return false; // Placeholder
         },
         stalemate() {
-            // Implement stalemate logic
+           
             return false; // Placeholder
         },
         draw() {
-            // Implement draw logic
+          
             return false; // Placeholder
         }
     };
