@@ -13,36 +13,72 @@ function isValidPosition(x, y) {
     return x >= 0 && x < 6 && y >= 0 && y < 5;
 }
 
-function isCheck(game) {
-    console.log('Checking for check status.');
-    const turn = game.turn;
-    let kingPos = null;
-
-    // Find king position
+function getKingPosition(game, color) {
     for (let i = 0; i < 6; i++) {
         for (let j = 0; j < 5; j++) {
             const piece = game.board[i][j];
-            if ((turn === 'w' && piece === 'K') || (turn === 'b' && piece === 'k')) {
-                kingPos = [i, j];
-                break;
+            if ((color === 'w' && piece === 'K') || (color === 'b' && piece === 'k')) {
+                return [i, j];
             }
         }
-        if (kingPos) break;
     }
+    return null;
+}
+
+function isCheck(game) {
+    const kingPos = getKingPosition(game, game.turn);
+    if (!kingPos) return false;
 
     // Switch turn to check opponent's moves
-    game.turn = turn === 'w' ? 'b' : 'w';
+    game.turn = game.turn === 'w' ? 'b' : 'w';
     const opponentMoves = generateMoves(game);
-    game.turn = turn; // Switch back
+    game.turn = game.turn === 'w' ? 'b' : 'w'; // Switch back
 
-    // Check if any opponent move can capture the king
     return opponentMoves.some(move =>
         move.to[0] === kingPos[0] && move.to[1] === kingPos[1]
     );
 }
 
+function isCheckmate(game) {
+    if (!isCheck(game)) return false;
+    
+    const allMoves = generateMoves(game);
+    for (const move of allMoves) {
+        const gameCopy = cloneGame(game);
+        try {
+            gameCopy.makeMove(move);
+            if (!isCheck(gameCopy)) {
+                return false;
+            }
+        } catch (error) {
+            continue;
+        }
+    }
+    return true;
+}
+
+function isStalemate(game) {
+    if (isCheck(game)) return false;
+    return generateMoves(game).length === 0;
+}
+
+function isInsufficientMaterial(game) {
+    const pieces = game.board.flat().filter(piece => piece !== '.');
+    if (pieces.length <= 2) return true; // Only kings left
+
+    // Check for king and minor piece vs king
+    if (pieces.length === 3) {
+        const nonKings = pieces.filter(p => p.toLowerCase() !== 'k');
+        if (nonKings.length === 1) {
+            const piece = nonKings[0].toLowerCase();
+            return piece === 'n' || piece === 'b';
+        }
+    }
+
+    return false;
+}
+
 exports.createGame = () => {
-    console.log('Creating a new game.');
     return {
         board: [
             ['r', 'n', 'b', 'q', 'k'],
@@ -54,90 +90,132 @@ exports.createGame = () => {
         ],
         turn: 'w',
         moveHistory: [],
+        winner: null,
+        gameStatus: null,
+
         makeMove(move) {
-            console.log(`Making move from ${move.from} to ${move.to}.`);
             if (!Array.isArray(move.from) || !Array.isArray(move.to) ||
                 move.from.length !== 2 || move.to.length !== 2) {
                 throw new Error('Invalid move format. Use { from: [x, y], to: [x, y] }.');
             }
-        
+
             const [fromX, fromY] = move.from;
             const [toX, toY] = move.to;
-        
+
             if (!isValidPosition(fromX, fromY) || !isValidPosition(toX, toY)) {
                 throw new Error('Move out of bounds.');
             }
-        
+
             const piece = this.board[fromX][fromY];
-        
             if (piece === '.') {
                 throw new Error('No piece at the selected position.');
             }
-        
-            // Check if the piece belongs to the current turn
-            if ((this.turn === 'w' && piece !== piece.toUpperCase()) || // Uppercase check for white
-                (this.turn === 'b' && piece !== piece.toLowerCase())) { // Lowercase check for black
-                console.log(`Error: Piece at [${fromX}, ${fromY}] (${piece}) does not belong to the current turn (${this.turn}).`);
+
+            if ((this.turn === 'w' && piece !== piece.toUpperCase()) ||
+                (this.turn === 'b' && piece !== piece.toLowerCase())) {
                 throw new Error('Invalid piece selection. It is not your turn to move this piece.');
             }
-        
-            // Generate valid moves and check legality
+
             const validMoves = generatePieceMoves(this, [fromX, fromY]);
-            const isValidMove = validMoves.some(m => m.to[0] === toX && m.to[1] === toY);
-        
+            const isValidMove = validMoves.some(m =>
+                m.to[0] === toX && m.to[1] === toY
+            );
+
             if (!isValidMove) {
-                console.log(`Error: The move to [${toX}, ${toY}] is not valid for piece at [${fromX}, ${fromY}].`);
                 throw new Error('Invalid move for this piece.');
             }
-        
-            // Make the move temporarily
+
             const originalPiece = this.board[toX][toY];
             this.board[toX][toY] = piece;
             this.board[fromX][fromY] = '.';
-        
-            // Check if the move puts/leaves the king in check
+
             if (isCheck(this)) {
-                console.log('Move puts king in check. Undoing move.');
                 this.board[fromX][fromY] = piece;
                 this.board[toX][toY] = originalPiece;
                 throw new Error('Move would put or leave king in check.');
             }
-        
-            // Record the move
+
             this.moveHistory.push({
                 from: move.from,
                 to: move.to,
                 piece: piece,
                 captured: originalPiece !== '.'
             });
-            // Ensure turn is switched after a valid move
+
             this.turn = this.turn === 'w' ? 'b' : 'w';
-            console.log(`Turn changed to: ${this.turn}`); // Confirm turn change
-        },
-        isGameOver() {
-            console.log('Checking if the game is over.');
-            return this.checkmate() || this.stalemate() || this.draw();
-        },
-        checkmate() {
-            console.log('Checking for checkmate.');
-            if (!isCheck(this)) return false;
-            return generateMoves(this).length === 0;
-        },
-        stalemate() {
-            console.log('Checking for stalemate.');
-            if (isCheck(this)) return false;
-            return generateMoves(this).length === 0;
-        },
-        draw() {
-            console.log('Checking for draw.');
-            // Implement basic draw conditions: insufficient material, threefold repetition, etc.
-            // For simplicity, checking only insufficient material
-            const material = this.board.flat().filter(piece => piece !== '.').map(piece => piece.toLowerCase());
-            const uniquePieces = [...new Set(material)];
-            if (uniquePieces.length === 1 && (uniquePieces[0] === 'k' || uniquePieces[0] === 'n' || uniquePieces[0] === 'b')) {
-                return true; // Insufficient material (e.g., king vs. king, king vs. king and knight, etc.)
+
+            // Update game status after move
+            const status = this.getGameStatus();
+            this.gameStatus = status;
+            if (status.isOver) {
+                this.winner = status.winner;
             }
-            return false;
+
+            return status;
+        },
+
+        getGameStatus() {
+            if (isCheckmate(this)) {
+                const winner = this.turn === 'w' ? 'b' : 'w';
+                return {
+                    isOver: true,
+                    result: 'checkmate',
+                    winner: winner,
+                    message: `Checkmate! ${winner === 'w' ? 'White' : 'Black'} wins!`
+                };
+            }
+
+            if (isStalemate(this)) {
+                return {
+                    isOver: true,
+                    result: 'stalemate',
+                    winner: 'draw',
+                    message: 'Game drawn by stalemate!'
+                };
+            }
+
+            if (isInsufficientMaterial(this)) {
+                return {
+                    isOver: true,
+                    result: 'insufficient',
+                    winner: 'draw',
+                    message: 'Game drawn by insufficient material!'
+                };
+            }
+
+            if (this.moveHistory.length >= 100) {
+                return {
+                    isOver: true,
+                    result: '50-move-rule',
+                    winner: 'draw',
+                    message: 'Game drawn by 50-move rule!'
+                };
+            }
+
+            return {
+                isOver: false,
+                result: null,
+                winner: null,
+                message: `${this.turn === 'w' ? 'White' : 'Black'} to move`
+            };
+        },
+
+        isGameOver() {
+            const status = this.getGameStatus();
+            return status.isOver;
+        },
+
+        getValidMoves(position) {
+            const moves = generatePieceMoves(this, position);
+            return moves.filter(move => {
+                const gameCopy = cloneGame(this);
+                try {
+                    gameCopy.makeMove(move);
+                    return !isCheck(gameCopy);
+                } catch {
+                    return false;
+                }
+            });
         }
     };
 };
@@ -408,10 +486,14 @@ module.exports = {
     generatePieceMoves,
     cloneGame,
     isCheck,
+    isCheckmate,
+    isStalemate,
+    isInsufficientMaterial,
+    generatePieceMoves,
+    evaluatePosition,
     generateMoves,
     isValidPosition,
     evaluatePosition,
-    // Piece movement generators
     generatePawnMoves,
     generateKnightMoves,
     generateBishopMoves,
