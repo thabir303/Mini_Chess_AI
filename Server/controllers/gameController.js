@@ -1,4 +1,4 @@
-const { createGame, makeMove, runMinimax } = require('../models/gameLogic');
+const { createGame, makeMove, runMinimax, generatePieceMoves, cloneGame, isCheck } = require('../models/gameLogic');
 
 exports.startGame = (req, res) => {
     try {
@@ -16,21 +16,18 @@ exports.startGame = (req, res) => {
 
 exports.playMove = (req, res) => {
     try {
-        const { board, move, depth = 3, turn = 'w' } = req.body; // Add turn to destructuring
+        const { board, move, depth = 3, turn } = req.body;
         
         if (!board || !move) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        // Create a game instance with the current board state
         const game = createGame();
         game.board = board;
-        game.turn = turn; // Set the current turn from request
+        game.turn = turn;
         
-        // Make the player's move
         game.makeMove(move);
         
-        // If game is over after player's move
         if (game.isGameOver()) {
             return res.status(200).json({
                 board: game.board,
@@ -39,11 +36,9 @@ exports.playMove = (req, res) => {
             });
         }
 
-        // Get AI's move
         const aiResponse = runMinimax(game, depth);
         
         if (aiResponse.bestMove) {
-            // Make AI's move
             game.makeMove(aiResponse.bestMove);
         }
 
@@ -52,10 +47,42 @@ exports.playMove = (req, res) => {
             isGameOver: game.isGameOver(),
             lastMove: aiResponse.bestMove,
             evaluation: aiResponse.score,
-            turn: game.turn // Send back the current turn
+            turn: game.turn
         });
     } catch (error) {
         console.error('Error processing move:', error);
+        res.status(400).json({ error: error.message });
+    }
+};
+
+exports.getValidMoves = (req, res) => {
+    try {
+        const { board, position, turn } = req.body;
+        
+        if (!board || !position) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const game = createGame();
+        game.board = board;
+        game.turn = turn;
+        
+        const moves = generatePieceMoves(game, position);
+        
+        // Filter out moves that would put the king in check
+        const validMoves = moves.filter(move => {
+            const gameCopy = cloneGame(game);
+            try {
+                gameCopy.makeMove(move);
+                return !isCheck(gameCopy);
+            } catch (error) {
+                return false;
+            }
+        });
+
+        res.status(200).json({ validMoves });
+    } catch (error) {
+        console.error('Error getting valid moves:', error);
         res.status(400).json({ error: error.message });
     }
 };

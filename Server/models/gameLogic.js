@@ -399,3 +399,23 @@ function generateKingMoves(game, position) {
 
     return moves;
 }
+// Add this at the very end of gameLogic.js, after all function definitions
+module.exports = {
+    createGame: exports.createGame,
+    makeMove: exports.makeMove,
+    runMinimax: exports.runMinimax,
+    // Internal functions that need to be exported
+    generatePieceMoves,
+    cloneGame,
+    isCheck,
+    generateMoves,
+    isValidPosition,
+    evaluatePosition,
+    // Piece movement generators
+    generatePawnMoves,
+    generateKnightMoves,
+    generateBishopMoves,
+    generateRookMoves,
+    generateQueenMoves,
+    generateKingMoves
+};
