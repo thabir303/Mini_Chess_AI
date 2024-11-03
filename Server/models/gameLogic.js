@@ -345,33 +345,38 @@ function generatePieceMoves(game, position) {
 function generatePawnMoves(game, position) {
     const [x, y] = position;
     const moves = [];
-    const direction = game.turn === 'w' ? -1 : 1;
+    const direction = game.turn === 'w' ? -1 : 1;  // White moves up (-1), Black moves down (+1)
 
-    if (x + direction >= 0 && x + direction < 6 && game.board[x + direction][y] === '.') {
-        moves.push({ from: position, to: [x + direction, y] });
-        console.log(`Pawn move to [${x + direction}, ${y}] added.`);
-    }
-
-    if ((game.turn === 'w' && x === 4) || (game.turn === 'b' && x === 1)) {
-        if (x + 2 * direction >= 0 && x + 2 * direction < 6 && game.board[x + 2 * direction][y] === '.') {
-            moves.push({ from: position, to: [x + 2 * direction, y] });
-            console.log(`Pawn double move to [${x + 2 * direction}, ${y}] added.`);
+    // Single step forward
+    if (x + direction >= 0 && x + direction < 6) {
+        // Check if the square directly in front is empty
+        if (game.board[x + direction][y] === '.') {
+            moves.push({ from: position, to: [x + direction, y] });
+            
+            // Double step from starting position
+            // White pawns can move two steps from row 4, Black from row 1
+            const canDoubleMove = (game.turn === 'w' && x === 4) || (game.turn === 'b' && x === 1);
+            if (canDoubleMove && game.board[x + 2 * direction][y] === '.') {
+                moves.push({ from: position, to: [x + 2 * direction, y] });
+            }
         }
     }
 
-    for (const side of [-1, 1]) {
+    // Captures (diagonal moves)
+    for (const side of [-1, 1]) {  // Check both left and right diagonals
         if (y + side >= 0 && y + side < 5 && x + direction >= 0 && x + direction < 6) {
-            const target = game.board[x + direction][y + side];
-            if (target !== '.' && ((game.turn === 'w' && target === target.toLowerCase()) || (game.turn === 'b' && target === target.toUpperCase()))) {
+            const targetPiece = game.board[x + direction][y + side];
+            // Can capture enemy pieces
+            if (targetPiece !== '.' && 
+                ((game.turn === 'w' && targetPiece === targetPiece.toLowerCase()) || 
+                 (game.turn === 'b' && targetPiece === targetPiece.toUpperCase()))) {
                 moves.push({ from: position, to: [x + direction, y + side] });
-                console.log(`Pawn capture move to [${x + direction}, ${y + side}] added.`);
             }
         }
     }
 
     return moves;
 }
-
 function generateKnightMoves(game, position) {
     const [x, y] = position;
     const moves = [];
