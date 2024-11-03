@@ -1,4 +1,3 @@
-// models/gameLogic.js
 const { evaluateBoard } = require('../utils/evaluation');
 
 function cloneGame(game) {
@@ -9,6 +8,7 @@ function cloneGame(game) {
     newGame.moveHistory = [...game.moveHistory];
     return newGame;
 }
+
 function isValidPosition(x, y) {
     return x >= 0 && x < 6 && y >= 0 && y < 5;
 }
@@ -36,7 +36,7 @@ function isCheck(game) {
     game.turn = turn; // Switch back
 
     // Check if any opponent move can capture the king
-    return opponentMoves.some(move => 
+    return opponentMoves.some(move =>
         move.to[0] === kingPos[0] && move.to[1] === kingPos[1]
     );
 }
@@ -56,64 +56,63 @@ exports.createGame = () => {
         moveHistory: [],
         makeMove(move) {
             console.log(`Making move from ${move.from} to ${move.to}.`);
-            // Validate move format
-            if (!Array.isArray(move.from) || !Array.isArray(move.to) || 
+            if (!Array.isArray(move.from) || !Array.isArray(move.to) ||
                 move.from.length !== 2 || move.to.length !== 2) {
                 throw new Error('Invalid move format. Use { from: [x, y], to: [x, y] }.');
             }
-
+        
             const [fromX, fromY] = move.from;
             const [toX, toY] = move.to;
-
-            // Validate boundaries
+        
             if (!isValidPosition(fromX, fromY) || !isValidPosition(toX, toY)) {
                 throw new Error('Move out of bounds.');
             }
-
+        
             const piece = this.board[fromX][fromY];
-            
-            // Validate piece ownership
-            if (piece === '.' || 
-                (this.turn === 'w' && piece.toLowerCase() === piece) || 
-                (this.turn === 'b' && piece.toUpperCase() === piece)) {
-                throw new Error('Invalid piece selection.');
+        
+            if (piece === '.') {
+                throw new Error('No piece at the selected position.');
             }
-
-            // Validate move legality
+        
+            // Check if the piece belongs to the current turn
+            if ((this.turn === 'w' && piece !== piece.toUpperCase()) || // Uppercase check for white
+                (this.turn === 'b' && piece !== piece.toLowerCase())) { // Lowercase check for black
+                console.log(`Error: Piece at [${fromX}, ${fromY}] (${piece}) does not belong to the current turn (${this.turn}).`);
+                throw new Error('Invalid piece selection. It is not your turn to move this piece.');
+            }
+        
+            // Generate valid moves and check legality
             const validMoves = generatePieceMoves(this, [fromX, fromY]);
-            const isValidMove = validMoves.some(m => 
-                m.to[0] === toX && m.to[1] === toY
-            );
-
+            const isValidMove = validMoves.some(m => m.to[0] === toX && m.to[1] === toY);
+        
             if (!isValidMove) {
+                console.log(`Error: The move to [${toX}, ${toY}] is not valid for piece at [${fromX}, ${fromY}].`);
                 throw new Error('Invalid move for this piece.');
             }
-
-            // Make move temporarily
+        
+            // Make the move temporarily
             const originalPiece = this.board[toX][toY];
             this.board[toX][toY] = piece;
             this.board[fromX][fromY] = '.';
-
-            // Check if move puts/leaves own king in check
+        
+            // Check if the move puts/leaves the king in check
             if (isCheck(this)) {
                 console.log('Move puts king in check. Undoing move.');
-                // Undo move
                 this.board[fromX][fromY] = piece;
                 this.board[toX][toY] = originalPiece;
                 throw new Error('Move would put or leave king in check.');
             }
-
-            // Record move
+        
+            // Record the move
             this.moveHistory.push({
                 from: move.from,
                 to: move.to,
                 piece: piece,
                 captured: originalPiece !== '.'
             });
-
-            // Change turn
+            // Ensure turn is switched after a valid move
             this.turn = this.turn === 'w' ? 'b' : 'w';
-            console.log('Turn changed to:', this.turn);
+            console.log(`Turn changed to: ${this.turn}`); // Confirm turn change
         },
         isGameOver() {
             console.log('Checking if the game is over.');
@@ -159,6 +158,7 @@ exports.makeMove = (boardState, move) => {
     }
 };
 
+
 exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizingPlayer = true) => {
     console.log(`Running minimax at depth ${depth} for ${maximizingPlayer ? 'maximizing' : 'minimizing'} player.`);
     if (depth <= 0 || game.isGameOver()) {
@@ -203,6 +203,23 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
         return { score: minEval };
     }
 };
+
+function evaluatePosition(game) {
+    console.log('Evaluating position.');
+    let score = evaluateBoard(game);
+
+    // Add positional bonuses
+    if (game.checkmate()) {
+        score += (game.turn === 'b' ? 20000 : -20000); 
+    }
+
+    if (game.stalemate() || game.draw()) {
+        score = 0; 
+    }
+
+    return score;
+}
+
 function generateMoves(game) {
     console.log('Generating moves for the current game state.');
     const moves = [];
@@ -252,13 +269,11 @@ function generatePawnMoves(game, position) {
     const moves = [];
     const direction = game.turn === 'w' ? -1 : 1;
 
-    // Single move forward
     if (x + direction >= 0 && x + direction < 6 && game.board[x + direction][y] === '.') {
         moves.push({ from: position, to: [x + direction, y] });
         console.log(`Pawn move to [${x + direction}, ${y}] added.`);
     }
 
-    // Double move from starting position
     if ((game.turn === 'w' && x === 4) || (game.turn === 'b' && x === 1)) {
         if (x + 2 * direction >= 0 && x + 2 * direction < 6 && game.board[x + 2 * direction][y] === '.') {
             moves.push({ from: position, to: [x + 2 * direction, y] });
@@ -266,7 +281,6 @@ function generatePawnMoves(game, position) {
         }
     }
 
-    // Capture moves
     for (const side of [-1, 1]) {
         if (y + side >= 0 && y + side < 5 && x + direction >= 0 && x + direction < 6) {
             const target = game.board[x + direction][y + side];

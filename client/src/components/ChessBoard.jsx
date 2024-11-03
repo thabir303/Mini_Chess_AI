@@ -1,4 +1,4 @@
-import  { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const ChessBoard = () => {
@@ -7,15 +7,17 @@ const ChessBoard = () => {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [lastMove, setLastMove] = useState(null);
+  const [currentTurn, setCurrentTurn] = useState('w'); // 'w' for white, 'b' for black
 
   const startNewGame = async () => {
     try {
       setLoading(true);
       const response = await axios.post('http://localhost:5000/api/game/start');
       setBoard(response.data.board);
-      setMessage('Game started! Your turn (White)');
+      setMessage(`Game started! White's turn`);
       setLastMove(null);
       setSelectedPiece(null);
+      setCurrentTurn('w'); // Start with white
     } catch (error) {
       setMessage('Error starting game: ' + error.message);
     } finally {
@@ -33,9 +35,17 @@ const ChessBoard = () => {
     if (!selectedPiece) {
       // Selecting a piece
       const piece = board[row][col];
-      if (piece !== '.' && piece === piece.toUpperCase()) {  // White pieces only
+      if (piece !== '.' && (
+        (currentTurn === 'w' && piece === piece.toUpperCase()) ||
+        (currentTurn === 'b' && piece === piece.toLowerCase())
+      )) {
         setSelectedPiece({ row, col });
-        setMessage('Select destination for the piece');
+        setMessage(`Selected piece at [${row}, ${col}]. Choose a destination.`);
+        console.log(`Current Turn: ${currentTurn}`);
+        console.log(`Selected Piece: ${piece}`);
+
+      } else {
+        setMessage('Invalid selection. It is ' + (currentTurn === 'w' ? 'White' : 'Black') + `'s turn.`);
       }
     } else {
       // Making a move
@@ -46,25 +56,30 @@ const ChessBoard = () => {
           to: [row, col]
         };
 
-        const response = await axios.post('http://localhost:5000/api/game/move', {
-          board: board,
-          move: move,
-          depth: 3
-        });
+        // In handleSquareClick function, modify the axios.post call:
+const response = await axios.post('http://localhost:5000/api/game/move', {
+    board: board,
+    move: move,
+    depth: 3,
+    turn: currentTurn // Add this line
+});
 
         setBoard(response.data.board);
         setLastMove(response.data.lastMove);
-        
+        setSelectedPiece(null);
+
         if (response.data.isGameOver) {
           setMessage('Game Over!');
         } else {
-          setMessage('Your turn');
+          // Switch turn
+          const nextTurn = currentTurn === 'w' ? 'b' : 'w';
+          setCurrentTurn(nextTurn);
+          setMessage(`${nextTurn === 'w' ? 'White' : 'Black'}'s turn.`);
         }
       } catch (error) {
         setMessage('Invalid move: ' + (error.response?.data?.error || error.message));
       } finally {
         setLoading(false);
-        setSelectedPiece(null);
       }
     }
   };

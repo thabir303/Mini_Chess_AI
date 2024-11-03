@@ -16,7 +16,7 @@ exports.startGame = (req, res) => {
 
 exports.playMove = (req, res) => {
     try {
-        const { board, move, depth = 3 } = req.body;
+        const { board, move, depth = 3, turn = 'w' } = req.body; // Add turn to destructuring
         
         if (!board || !move) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -25,6 +25,7 @@ exports.playMove = (req, res) => {
         // Create a game instance with the current board state
         const game = createGame();
         game.board = board;
+        game.turn = turn; // Set the current turn from request
         
         // Make the player's move
         game.makeMove(move);
@@ -50,7 +51,8 @@ exports.playMove = (req, res) => {
             board: game.board,
             isGameOver: game.isGameOver(),
             lastMove: aiResponse.bestMove,
-            evaluation: aiResponse.score
+            evaluation: aiResponse.score,
+            turn: game.turn // Send back the current turn
         });
     } catch (error) {
         console.error('Error processing move:', error);
