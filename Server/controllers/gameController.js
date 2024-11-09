@@ -1,3 +1,5 @@
+// /Server/controllers/gameController.js
+
 const { createGame, runMinimax } = require('../models/gameLogic');
 
 exports.startGame = (req, res) => {
@@ -31,7 +33,7 @@ exports.playMove = (req, res) => {
             !Array.isArray(move.from) || !Array.isArray(move.to) ||
             move.from.length !== 2 || move.to.length !== 2) {
             return res.status(400).json({ 
-                error: 'Invalid move format. Expected {from: [x, y], to: [x, y]}' 
+                error: 'Invalid move format. Expected {from: [x, y], to: [x, y], promotion: "q|r|b|n"}' 
             });
         }
 
@@ -50,25 +52,22 @@ exports.playMove = (req, res) => {
                 turn: game.turn,  // Next player's turn
                 lastMove: move,
                 isGameOver: moveResult.isOver,
-                message: moveResult.message
+                message: moveResult.message,
+                gameStatus: moveResult // Include entire game status
             };
 
-            // Add game over details if applicable
-            if (moveResult.isOver) {
-                response.gameStatus = moveResult.result;
-                response.winner = moveResult.winner;
-                return res.status(200).json(response);
-            }
-
-            // For future AI implementation - keeping the structure but not executing for now
+            // Handle AI move if in 'ai' mode and game is not over
             if (gameMode === 'ai' && !moveResult.isOver) {
                 try {
-                    // This will be implemented properly in the future
                     const aiResponse = runMinimax(game, 3); // Depth of 3 for now
                     if (aiResponse && aiResponse.bestMove) {
-                        // Store AI's move information but don't execute it for now
-                        response.aiMove = aiResponse.bestMove;
-                        response.evaluation = aiResponse.score;
+                        game.makeMove(aiResponse.bestMove); // Execute AI move
+                        response.board = game.board;
+                        response.turn = game.turn;
+                        response.lastMove = aiResponse.bestMove;
+                        response.isGameOver = game.isGameOver();
+                        response.message = game.gameStatus.message;
+                        response.gameStatus = game.gameStatus;
                     }
                 } catch (aiError) {
                     console.log('AI move generation skipped:', aiError.message);
@@ -79,6 +78,15 @@ exports.playMove = (req, res) => {
             return res.status(200).json(response);
 
         } catch (moveError) {
+            // Check if the error is related to promotion
+            if (moveError.message.includes('Promotion required')) {
+                return res.status(400).json({ 
+                    error: moveError.message,
+                    requiresPromotion: true,
+                    move: move
+                });
+            }
+
             return res.status(400).json({ 
                 error: moveError.message || 'Invalid move'
             });

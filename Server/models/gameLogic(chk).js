@@ -1,12 +1,6 @@
 // /Server/models/gameLogic.js
 
 const { evaluateBoard } = require('../utils/evaluation');
-
-/**
- * Clones the current game state to avoid mutations.
- * @param {Object} game - The current game instance.
- * @returns {Object} - A cloned copy of the game.
- */
 function cloneGame(game) {
     const newGame = exports.createGame();
     newGame.board = JSON.parse(JSON.stringify(game.board));
@@ -14,14 +8,11 @@ function cloneGame(game) {
     newGame.moveHistory = [...game.moveHistory];
     newGame.winner = game.winner;
     newGame.gameStatus = game.gameStatus;
-    newGame.checkmateTime = game.checkmateTime; // Preserve checkmateTime
     return newGame;
 }
-
 function isValidPosition(x, y) {
     return x >= 0 && x < 6 && y >= 0 && y < 5;
 }
-
 function getKingPosition(game, color) {
     for (let i = 0; i < 6; i++) {
         for (let j = 0; j < 5; j++) {
@@ -33,13 +24,6 @@ function getKingPosition(game, color) {
     }
     return null;
 }
-
-/**
- * Determines if the specified player is in check.
- * @param {Object} game - The current game instance.
- * @param {string} color - 'w' for White or 'b' for Black.
- * @returns {boolean} - True if in check, else false.
- */
 function isCheck(game, color) {
     const kingPos = getKingPosition(game, color);
     if (!kingPos) return false; // No king found, technically not in check
@@ -73,13 +57,11 @@ function isCheckmate(game, color) {
     }
     return true; // No moves can escape check
 }
-
 function isStalemate(game, color) {
     if (isCheck(game, color)) return false; // Must not be in check for stalemate
     const moves = generateMoves(game, color);
     return moves.length === 0;
 }
-
 function isInsufficientMaterial(game) {
     const pieces = game.board.flat().filter(piece => piece !== '.');
     if (pieces.length <= 2) return true; // Only kings left
@@ -287,6 +269,7 @@ exports.createGame = () => {
         }
     };
 };
+
 /**
  * Processes a move based on the current board state and the move object.
  * @param {Array} boardState - The current board state as a 6x5 array.
@@ -311,16 +294,6 @@ exports.makeMove = (boardState, move) => {
         throw new Error(`Error processing move: ${error.message}`);
     }
 };
-
-/**
- * Executes the Minimax algorithm to determine the best move.
- * @param {Object} game - The current game instance.
- * @param {number} depth - The depth of the search tree.
- * @param {number} alpha - Alpha value for pruning.
- * @param {number} beta - Beta value for pruning.
- * @param {boolean} maximizingPlayer - True if maximizing player, else false.
- * @returns {Object} - The evaluation score and best move.
- */
 exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizingPlayer = true) => {
     console.log(`Running minimax at depth ${depth} for ${maximizingPlayer ? 'maximizing' : 'minimizing'} player.`);
     if (depth <= 0 || game.isGameOver()) {
@@ -368,12 +341,6 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
         return { score: minEval };
     }
 };
-
-/**
- * Evaluates the current board position.
- * @param {Object} game - The current game instance.
- * @returns {number} - The evaluation score.
- */
 function evaluatePosition(game) {
     console.log('Evaluating position.');
     let score = evaluateBoard(game);
@@ -389,13 +356,6 @@ function evaluatePosition(game) {
 
     return score;
 }
-
-/**
- * Generates all possible moves for the specified player.
- * @param {Object} game - The current game instance.
- * @param {string} color - 'w' for White or 'b' for Black.
- * @returns {Array} - Array of move objects.
- */
 function generateMoves(game, color = game.turn) {
     console.log('Generating moves for the current game state.');
     const moves = [];
@@ -410,13 +370,6 @@ function generateMoves(game, color = game.turn) {
     console.log(`Total moves generated: ${moves.length}`);
     return moves;
 }
-
-/**
- * Generates all possible moves for a specific piece.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the piece.
- * @returns {Array} - Array of move objects.
- */
 function generatePieceMoves(game, position) {
     const [x, y] = position;
     const piece = game.board[x][y].toLowerCase();
@@ -445,13 +398,6 @@ function generatePieceMoves(game, position) {
     console.log(`Generated ${moves.length} moves for piece ${piece} at position ${position}.`);
     return moves;
 }
-
-/**
- * Generates all possible pawn moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the pawn.
- * @returns {Array} - Array of move objects.
- */
 function generatePawnMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -498,12 +444,7 @@ function generatePawnMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible knight moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the knight.
- * @returns {Array} - Array of move objects.
- */
+
 function generateKnightMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -527,12 +468,6 @@ function generateKnightMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible queen moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the queen.
- * @returns {Array} - Array of move objects.
- */
 function generateQueenMoves(game, position) {
     console.log('Generating queen moves.');
     const rookMoves = generateRookMoves(game, position);
@@ -541,12 +476,6 @@ function generateQueenMoves(game, position) {
     return rookMoves.concat(bishopMoves);
 }
 
-/**
- * Generates all possible rook moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the rook.
- * @returns {Array} - Array of move objects.
- */
 function generateRookMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -576,12 +505,6 @@ function generateRookMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible bishop moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the bishop.
- * @returns {Array} - Array of move objects.
- */
 function generateBishopMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -610,13 +533,6 @@ function generateBishopMoves(game, position) {
 
     return moves;
 }
-
-/**
- * Generates all possible king moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the king.
- * @returns {Array} - Array of move objects.
- */
 function generateKingMoves(game, position) {
     const [x, y] = position;
     const moves = [];

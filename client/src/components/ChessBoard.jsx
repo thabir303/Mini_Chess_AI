@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+// /client/src/components/ChessBoard.jsx
+
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 const ChessBoard = () => {
@@ -10,6 +12,12 @@ const ChessBoard = () => {
     const [currentTurn, setCurrentTurn] = useState('w');
     const [possibleMoves, setPossibleMoves] = useState([]);
     const [gameResult, setGameResult] = useState(null);
+    const [promotionModal, setPromotionModal] = useState({
+        isVisible: false,
+        move: null,
+    });
+    const [timer, setTimer] = useState(null); // New state for timer
+    const timerRef = useRef(null); // Ref to store interval ID
 
     const startNewGame = async () => {
         try {
@@ -22,6 +30,11 @@ const ChessBoard = () => {
             setPossibleMoves([]);
             setCurrentTurn('w');
             setGameResult(null);
+            setPromotionModal({ isVisible: false, move: null });
+            setTimer(null); // Reset timer
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+            }
         } catch (error) {
             setMessage('Error starting game: ' + error.message);
         } finally {
@@ -41,6 +54,7 @@ const ChessBoard = () => {
                 turn: currentTurn
             });
             setPossibleMoves(response.data.validMoves);
+            console.log(possibleMoves);
         } catch (error) {
             console.error('Error getting valid moves:', error);
             setPossibleMoves([]);
@@ -48,7 +62,7 @@ const ChessBoard = () => {
     };
 
     const handleSquareClick = async (row, col) => {
-        if (!board || loading || gameResult) return;
+        if (!board || loading || gameResult || timer) return; // Disable moves during timer
 
         if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
             setSelectedPiece(null);
@@ -76,38 +90,94 @@ const ChessBoard = () => {
                 return;
             }
 
-            try {
-                setLoading(true);
-                const move = {
-                    from: [selectedPiece.row, selectedPiece.col],
-                    to: [row, col]
-                };
+            const move = {
+                from: [selectedPiece.row, selectedPiece.col],
+                to: [row, col]
+            };
 
-                const response = await axios.post('http://localhost:5000/api/game/move', {
-                    board: board,
-                    move: move,
-                    turn: currentTurn
+            // Check if the move is a pawn moving to the last rank
+            const piece = board[selectedPiece.row][selectedPiece.col];
+            const isPawn = piece.toLowerCase() === 'p';
+            const promotionRow = currentTurn === 'w' ? 0 : 5;
+            const isPromotionMove = isPawn && row === promotionRow;
+
+            if (isPromotionMove) {
+                // Show promotion modal
+                setPromotionModal({
+                    isVisible: true,
+                    move: move
                 });
-
-                setBoard(response.data.board);
-                setLastMove(response.data.lastMove);
-                setSelectedPiece(null);
-                setPossibleMoves([]);
-
-                if (response.data.isGameOver) {
-                    setGameResult(response.data.gameStatus);
-                    setMessage(response.data.message || 'Game Over!');
-                } else {
-                    const nextTurn = currentTurn === 'w' ? 'b' : 'w';
-                    setCurrentTurn(nextTurn);
-                    setMessage(`${nextTurn === 'w' ? 'White' : 'Black'}'s turn.`);
-                }
-            } catch (error) {
-                setMessage('Invalid move: ' + (error.response?.data?.error || error.message));
-            } finally {
-                setLoading(false);
+                return;
             }
+
+            // Proceed with the move without promotion
+            await sendMove(move);
         }
+    };
+
+    const sendMove = async (move, promotion = null) => {
+        try {
+            setLoading(true);
+            const movePayload = { ...move };
+            if (promotion) {
+                movePayload.promotion = promotion;
+            }
+
+            const response = await axios.post('http://localhost:5000/api/game/move', {
+                board: board,
+                move: movePayload,
+                turn: currentTurn
+            });
+
+            setBoard(response.data.board);
+            setLastMove(response.data.lastMove);
+            setSelectedPiece(null);
+            setPossibleMoves([]);
+
+            if (response.data.isGameOver) {
+                setGameResult(response.data.message);
+                if (response.data.status.result === 'checkmate') {
+                    setMessage(response.data.message);
+                } else {
+                    setMessage(response.data.message);
+                }
+            } else {
+                const nextTurn = currentTurn === 'w' ? 'b' : 'w';
+                setCurrentTurn(nextTurn);
+                setMessage(`${nextTurn === 'w' ? 'White' : 'Black'}'s turn.`);
+            }
+
+            // Handle checkmate_pending status for timer
+            if (response.data.gameStatus && response.data.gameStatus.result === 'checkmate_pending') {
+                const remainingTime = response.data.gameStatus.remainingTime;
+                setTimer(remainingTime);
+                startCountdown(remainingTime);
+            } else {
+                // Clear any existing timer if not in checkmate_pending
+                setTimer(null);
+                if (timerRef.current) {
+                    clearInterval(timerRef.current);
+                }
+            }
+        } catch (error) {
+            if (error.response?.data.requiresPromotion) {
+                // Handle promotion requirement
+                const pendingMove = error.response.data.move;
+                setPromotionModal({
+                    isVisible: true,
+                    move: pendingMove
+                });
+            } else {
+                setMessage('Invalid move: ' + (error.response?.data?.error || error.message));
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePromotionChoice = (promotion) => {
+        sendMove(promotionModal.move, promotion);
+        setPromotionModal({ isVisible: false, move: null });
     };
 
     const isLastMove = (row, col) => {
@@ -119,9 +189,10 @@ const ChessBoard = () => {
     };
 
     const isPossibleMove = (row, col) => {
-        return possibleMoves.some(move =>
-            move.to[0] === row && move.to[1] === col
-        );
+        return possibleMoves.some(move =>{
+            console.log(move);
+            return move.to[0] === row && move.to[1] === col;
+        });
     };
 
     const getPieceName = (piece) => {
@@ -147,6 +218,59 @@ const ChessBoard = () => {
         };
         return symbols[piece] || '';
     };
+
+    /**
+     * Starts the countdown timer.
+     * @param {number} initialTime - Initial time in seconds.
+     */
+    const startCountdown = (initialTime) => {
+        setTimer(initialTime);
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+        }
+        timerRef.current = setInterval(() => {
+            setTimer(prevTime => {
+                if (prevTime <= 1) {
+                    clearInterval(timerRef.current);
+                    setGameResult(`${currentTurn === 'w' ? 'White' : 'Black'} wins by checkmate timer!`);
+                    setMessage(`${currentTurn === 'w' ? 'White' : 'Black'} wins by checkmate timer!`);
+                    return null;
+                }
+                return prevTime - 1;
+            });
+        }, 1000);
+    };
+
+    useEffect(() => {
+        // Poll the game status every second to handle timer updates
+        const interval = setInterval(async () => {
+            try {
+                const response = await axios.post('http://localhost:5000/api/game/status', {
+                    board: board,
+                    turn: currentTurn
+                });
+                const status = response.data.gameStatus;
+
+                if (status) {
+                    if (status.result === 'checkmate_pending') {
+                        setTimer(status.remainingTime);
+                        startCountdown(status.remainingTime);
+                    } else if (status.result === 'checkmate') {
+                        setGameResult(status.message);
+                        setMessage(status.message);
+                        setTimer(null);
+                        if (timerRef.current) {
+                            clearInterval(timerRef.current);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling game status:', error);
+            }
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [board, currentTurn]);
 
     if (!board) return (
         <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-100 to-slate-200">
@@ -178,6 +302,11 @@ const ChessBoard = () => {
                         'bg-blue-100 text-blue-800'}`}>
                     {message}
                 </div>
+                {timer !== null && !gameResult && (
+                    <div className="text-xl font-semibold text-red-600">
+                        Time remaining: {timer} seconds
+                    </div>
+                )}
             </div>
 
             <div className="relative">
@@ -263,6 +392,20 @@ const ChessBoard = () => {
                     >
                         Play Again
                     </button>
+                </div>
+            )}
+
+            {promotionModal.isVisible && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                    <div className="bg-white p-6 rounded-lg shadow-lg">
+                        <h2 className="text-xl font-semibold mb-4">Choose Promotion</h2>
+                        <div className="flex gap-4 justify-center">
+                            <button onClick={() => handlePromotionChoice('q')} className="px-4 py-2 bg-blue-500 text-white rounded">Queen</button>
+                            <button onClick={() => handlePromotionChoice('r')} className="px-4 py-2 bg-blue-500 text-white rounded">Rook</button>
+                            <button onClick={() => handlePromotionChoice('b')} className="px-4 py-2 bg-blue-500 text-white rounded">Bishop</button>
+                            <button onClick={() => handlePromotionChoice('n')} className="px-4 py-2 bg-blue-500 text-white rounded">Knight</button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

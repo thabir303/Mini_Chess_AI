@@ -2,19 +2,12 @@
 
 const { evaluateBoard } = require('../utils/evaluation');
 
-/**
- * Clones the current game state to avoid mutations.
- * @param {Object} game - The current game instance.
- * @returns {Object} - A cloned copy of the game.
- */
 function cloneGame(game) {
+    console.log('Cloning game state.');
     const newGame = exports.createGame();
     newGame.board = JSON.parse(JSON.stringify(game.board));
     newGame.turn = game.turn;
     newGame.moveHistory = [...game.moveHistory];
-    newGame.winner = game.winner;
-    newGame.gameStatus = game.gameStatus;
-    newGame.checkmateTime = game.checkmateTime; // Preserve checkmateTime
     return newGame;
 }
 
@@ -34,50 +27,41 @@ function getKingPosition(game, color) {
     return null;
 }
 
-/**
- * Determines if the specified player is in check.
- * @param {Object} game - The current game instance.
- * @param {string} color - 'w' for White or 'b' for Black.
- * @returns {boolean} - True if in check, else false.
- */
-function isCheck(game, color) {
-    const kingPos = getKingPosition(game, color);
-    if (!kingPos) return false; // No king found, technically not in check
+function isCheck(game) {
+    const kingPos = getKingPosition(game, game.turn);
+    if (!kingPos) return false;
 
-    // Clone the game to avoid mutating the original game.turn
-    const gameCopy = cloneGame(game);
-    gameCopy.turn = color === 'w' ? 'b' : 'w'; // Switch to opponent's turn
-    const opponentMoves = generateMoves(gameCopy);
+    // Switch turn to check opponent's moves
+    game.turn = game.turn === 'w' ? 'b' : 'w';
+    const opponentMoves = generateMoves(game);
+    game.turn = game.turn === 'w' ? 'b' : 'w'; // Switch back
 
-    // Check if any opponent move can capture the king
     return opponentMoves.some(move =>
         move.to[0] === kingPos[0] && move.to[1] === kingPos[1]
     );
 }
 
-function isCheckmate(game, color) {
-    if (!isCheck(game, color)) return false; // Must be in check to be in checkmate
-
-    const allMoves = generateMoves(game, color);
+function isCheckmate(game) {
+    if (!isCheck(game)) return false;
+   
+    const allMoves = generateMoves(game);
     for (const move of allMoves) {
         const gameCopy = cloneGame(game);
         try {
             gameCopy.makeMove(move);
-            if (!isCheck(gameCopy, color)) {
-                return false; // Found a move that escapes check
+            if (!isCheck(gameCopy)) {
+                return false;
             }
         } catch (error) {
-            // Invalid move, skip
             continue;
         }
     }
-    return true; // No moves can escape check
+    return true;
 }
 
-function isStalemate(game, color) {
-    if (isCheck(game, color)) return false; // Must not be in check for stalemate
-    const moves = generateMoves(game, color);
-    return moves.length === 0;
+function isStalemate(game) {
+    if (isCheck(game)) return false;
+    return generateMoves(game).length === 0;
 }
 
 function isInsufficientMaterial(game) {
@@ -96,10 +80,6 @@ function isInsufficientMaterial(game) {
     return false;
 }
 
-/**
- * Creates a new game instance with the initial board setup.
- * @returns {Object} - A new game instance.
- */
 exports.createGame = () => {
     return {
         board: [
@@ -115,16 +95,10 @@ exports.createGame = () => {
         winner: null,
         gameStatus: null,
 
-        /**
-         * Executes a move on the board.
-         * @param {Object} move - The move to execute.
-         * @returns {Object} - The updated game status.
-         */
         makeMove(move) {
             console.log("Promotion: ", move?.promotion);
             const { from, to, promotion } = move;
 
-            // Validate move structure
             if (!Array.isArray(from) || !Array.isArray(to) ||
                 from.length !== 2 || to.length !== 2) {
                 throw new Error('Invalid move format. Use { from: [x, y], to: [x, y], promotion: "q|r|b|n" }.');
@@ -133,7 +107,6 @@ exports.createGame = () => {
             const [fromX, fromY] = from;
             const [toX, toY] = to;
 
-            // Validate positions
             if (!isValidPosition(fromX, fromY) || !isValidPosition(toX, toY)) {
                 throw new Error('Move out of bounds.');
             }
@@ -143,21 +116,19 @@ exports.createGame = () => {
                 throw new Error('No piece at the selected position.');
             }
 
-            // Validate piece ownership
             if ((this.turn === 'w' && piece !== piece.toUpperCase()) ||
                 (this.turn === 'b' && piece !== piece.toLowerCase())) {
                 throw new Error('Invalid piece selection. It is not your turn to move this piece.');
             }
 
-            // Generate valid moves for the selected piece
-            const validMoves = generatePieceMoves(this, [fromX, fromY]);
-            const isValidMove = validMoves.some(m =>
-                m.to[0] === toX && m.to[1] === toY
-            );
+            // const validMoves = generatePieceMoves(this, [fromX, fromY]);
+            // const isValidMove = validMoves.some(m =>
+            //     m.to[0] === toX && m.to[1] === toY
+            // );
 
-            if (!isValidMove) {
-                throw new Error('Invalid move for this piece.');
-            }
+            // if (!isValidMove) {
+            //     throw new Error('Invalid move for this piece.');
+            // }
 
             const originalPiece = this.board[toX][toY];
             this.board[toX][toY] = piece;
@@ -187,15 +158,12 @@ exports.createGame = () => {
                 this.board[toX][toY] = promotedPiece;
             }
 
-            // Check if the move leaves the player's own king in check
-            if (isCheck(this, this.turn)) {
-                // Revert the move
+            if (isCheck(this)) {
                 this.board[fromX][fromY] = piece;
                 this.board[toX][toY] = originalPiece;
-                throw new Error('Move would put or leave your king in check.');
+                throw new Error('Move would put or leave king in check.');
             }
 
-            // Record the move
             this.moveHistory.push({
                 from: move.from,
                 to: move.to,
@@ -204,7 +172,6 @@ exports.createGame = () => {
                 promotion: promotion || null
             });
 
-            // Switch turn to the opponent
             this.turn = this.turn === 'w' ? 'b' : 'w';
 
             // Update game status after move
@@ -217,23 +184,18 @@ exports.createGame = () => {
             return status;
         },
 
-        /**
-         * Retrieves the current game status.
-         * @returns {Object} - The game status.
-         */
         getGameStatus() {
-            const opponent = this.turn === 'w' ? 'b' : 'w';
-
-            if (isCheckmate(this, opponent)) {
+            if (isCheckmate(this)) {
+                const winner = this.turn === 'w' ? 'b' : 'w';
                 return {
                     isOver: true,
                     result: 'checkmate',
-                    winner: this.turn,
-                    message: `Checkmate! ${this.turn === 'w' ? 'White' : 'Black'} wins!`
+                    winner: winner,
+                    message: `Checkmate! ${winner === 'w' ? 'White' : 'Black'} wins!`
                 };
             }
 
-            if (isStalemate(this, opponent)) {
+            if (isStalemate(this)) {
                 return {
                     isOver: true,
                     result: 'stalemate',
@@ -272,14 +234,15 @@ exports.createGame = () => {
             const status = this.getGameStatus();
             return status.isOver;
         },
+
         getValidMoves(position) {
             const moves = generatePieceMoves(this, position);
-            console.log("Valid moves: ", moves);
+            console.log("You suck: ",moves);
             return moves.filter(move => {
                 const gameCopy = cloneGame(this);
                 try {
                     gameCopy.makeMove(move);
-                    return !isCheck(gameCopy, this.turn);
+                    return !isCheck(gameCopy);
                 } catch {
                     return false;
                 }
@@ -287,12 +250,7 @@ exports.createGame = () => {
         }
     };
 };
-/**
- * Processes a move based on the current board state and the move object.
- * @param {Array} boardState - The current board state as a 6x5 array.
- * @param {Object} move - The move to execute.
- * @returns {Object} - The updated board state and game status.
- */
+
 exports.makeMove = (boardState, move) => {
     try {
         console.log('Making move with board state:', boardState, 'and move:', move);
@@ -301,37 +259,25 @@ exports.makeMove = (boardState, move) => {
         }
         const game = exports.createGame();
         game.board = boardState;
-        // Determine whose turn it is based on move history or external input
-        // For simplicity, assuming 'w' to move. Adjust as necessary.
-        game.turn = 'w'; // You might need to pass the current turn as part of the board state or separately
-        const status = game.makeMove(move);
+        game.makeMove(move);
         const isGameOver = game.isGameOver();
-        return { board: game.board, isGameOver, status };
+        return { board: game.board, isGameOver };
     } catch (error) {
         throw new Error(`Error processing move: ${error.message}`);
     }
 };
 
-/**
- * Executes the Minimax algorithm to determine the best move.
- * @param {Object} game - The current game instance.
- * @param {number} depth - The depth of the search tree.
- * @param {number} alpha - Alpha value for pruning.
- * @param {number} beta - Beta value for pruning.
- * @param {boolean} maximizingPlayer - True if maximizing player, else false.
- * @returns {Object} - The evaluation score and best move.
- */
 exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizingPlayer = true) => {
     console.log(`Running minimax at depth ${depth} for ${maximizingPlayer ? 'maximizing' : 'minimizing'} player.`);
     if (depth <= 0 || game.isGameOver()) {
-        return { score: evaluatePosition(game) };
+        return { score: evaluateBoard(game) };
     }
     if (maximizingPlayer) {
         let maxEval = -Infinity;
         let bestMove = null;
-        const moves = generateMoves(game, game.turn);
+        const moves = generateMoves(game);
         for (const move of moves) {
-            const gameCopy = cloneGame(game);
+            const gameCopy = JSON.parse(JSON.stringify(game));
             try {
                 gameCopy.makeMove(move);
                 const evaluation = exports.runMinimax(gameCopy, depth - 1, alpha, beta, false).score;
@@ -349,16 +295,13 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
     } else {
         let minEval = Infinity;
         let bestMove = null;
-        const moves = generateMoves(game, game.turn);
+        const moves = generateMoves(game);
         for (const move of moves) {
-            const gameCopy = cloneGame(game);
+            const gameCopy = JSON.parse(JSON.stringify(game));
             try {
                 gameCopy.makeMove(move);
                 const evaluation = exports.runMinimax(gameCopy, depth - 1, alpha, beta, true).score;
-                if (evaluation < minEval) {
-                    minEval = evaluation;
-                    bestMove = move;
-                }
+                minEval = Math.min(minEval, evaluation);
                 beta = Math.min(beta, evaluation);
                 if (beta <= alpha) break;
             } catch (err) {
@@ -369,11 +312,6 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
     }
 };
 
-/**
- * Evaluates the current board position.
- * @param {Object} game - The current game instance.
- * @returns {number} - The evaluation score.
- */
 function evaluatePosition(game) {
     console.log('Evaluating position.');
     let score = evaluateBoard(game);
@@ -390,19 +328,13 @@ function evaluatePosition(game) {
     return score;
 }
 
-/**
- * Generates all possible moves for the specified player.
- * @param {Object} game - The current game instance.
- * @param {string} color - 'w' for White or 'b' for Black.
- * @returns {Array} - Array of move objects.
- */
-function generateMoves(game, color = game.turn) {
+function generateMoves(game) {
     console.log('Generating moves for the current game state.');
     const moves = [];
     for (let i = 0; i < 6; i++) {
         for (let j = 0; j < 5; j++) {
             const piece = game.board[i][j];
-            if (piece !== '.' && ((color === 'w' && piece === piece.toUpperCase()) || (color === 'b' && piece === piece.toLowerCase()))) {
+            if (piece !== '.' && ((game.turn === 'w' && piece === piece.toUpperCase()) || (game.turn === 'b' && piece === piece.toLowerCase()))) {
                 moves.push(...generatePieceMoves(game, [i, j]));
             }
         }
@@ -411,12 +343,6 @@ function generateMoves(game, color = game.turn) {
     return moves;
 }
 
-/**
- * Generates all possible moves for a specific piece.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the piece.
- * @returns {Array} - Array of move objects.
- */
 function generatePieceMoves(game, position) {
     const [x, y] = position;
     const piece = game.board[x][y].toLowerCase();
@@ -446,12 +372,6 @@ function generatePieceMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible pawn moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the pawn.
- * @returns {Array} - Array of move objects.
- */
 function generatePawnMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -498,12 +418,7 @@ function generatePawnMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible knight moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the knight.
- * @returns {Array} - Array of move objects.
- */
+
 function generateKnightMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -527,12 +442,6 @@ function generateKnightMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible queen moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the queen.
- * @returns {Array} - Array of move objects.
- */
 function generateQueenMoves(game, position) {
     console.log('Generating queen moves.');
     const rookMoves = generateRookMoves(game, position);
@@ -541,12 +450,6 @@ function generateQueenMoves(game, position) {
     return rookMoves.concat(bishopMoves);
 }
 
-/**
- * Generates all possible rook moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the rook.
- * @returns {Array} - Array of move objects.
- */
 function generateRookMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -576,12 +479,6 @@ function generateRookMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible bishop moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the bishop.
- * @returns {Array} - Array of move objects.
- */
 function generateBishopMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -611,12 +508,6 @@ function generateBishopMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible king moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the king.
- * @returns {Array} - Array of move objects.
- */
 function generateKingMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -640,7 +531,7 @@ function generateKingMoves(game, position) {
     return moves;
 }
 
-// Export all necessary functions
+// Add this at the very end of gameLogic.js, after all function definitions
 module.exports = {
     createGame: exports.createGame,
     makeMove: exports.makeMove,

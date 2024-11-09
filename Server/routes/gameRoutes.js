@@ -1,3 +1,5 @@
+// /Server/routes/gameRoutes.js
+
 const express = require('express');
 const { playMove, startGame, getValidMoves } = require('../controllers/gameController');
 
