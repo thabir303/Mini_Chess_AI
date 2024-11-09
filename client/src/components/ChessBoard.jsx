@@ -1,6 +1,4 @@
-// /client/src/components/ChessBoard.jsx
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 
 const ChessBoard = () => {
@@ -16,8 +14,6 @@ const ChessBoard = () => {
         isVisible: false,
         move: null,
     });
-    const [timer, setTimer] = useState(null); // New state for timer
-    const timerRef = useRef(null); // Ref to store interval ID
 
     const startNewGame = async () => {
         try {
@@ -31,10 +27,6 @@ const ChessBoard = () => {
             setCurrentTurn('w');
             setGameResult(null);
             setPromotionModal({ isVisible: false, move: null });
-            setTimer(null); // Reset timer
-            if (timerRef.current) {
-                clearInterval(timerRef.current);
-            }
         } catch (error) {
             setMessage('Error starting game: ' + error.message);
         } finally {
@@ -54,7 +46,6 @@ const ChessBoard = () => {
                 turn: currentTurn
             });
             setPossibleMoves(response.data.validMoves);
-            console.log(possibleMoves);
         } catch (error) {
             console.error('Error getting valid moves:', error);
             setPossibleMoves([]);
@@ -62,7 +53,7 @@ const ChessBoard = () => {
     };
 
     const handleSquareClick = async (row, col) => {
-        if (!board || loading || gameResult || timer) return; // Disable moves during timer
+        if (!board || loading || gameResult) return;
 
         if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
             setSelectedPiece(null);
@@ -95,14 +86,12 @@ const ChessBoard = () => {
                 to: [row, col]
             };
 
-            // Check if the move is a pawn moving to the last rank
             const piece = board[selectedPiece.row][selectedPiece.col];
             const isPawn = piece.toLowerCase() === 'p';
             const promotionRow = currentTurn === 'w' ? 0 : 5;
             const isPromotionMove = isPawn && row === promotionRow;
 
             if (isPromotionMove) {
-                // Show promotion modal
                 setPromotionModal({
                     isVisible: true,
                     move: move
@@ -110,7 +99,6 @@ const ChessBoard = () => {
                 return;
             }
 
-            // Proceed with the move without promotion
             await sendMove(move);
         }
     };
@@ -126,7 +114,8 @@ const ChessBoard = () => {
             const response = await axios.post('http://localhost:5000/api/game/move', {
                 board: board,
                 move: movePayload,
-                turn: currentTurn
+                turn: currentTurn,
+                gameMode: 'human' // or 'ai' for AI mode
             });
 
             setBoard(response.data.board);
@@ -134,34 +123,20 @@ const ChessBoard = () => {
             setSelectedPiece(null);
             setPossibleMoves([]);
 
-            if (response.data.isGameOver) {
-                setGameResult(response.data.message);
-                if (response.data.status.result === 'checkmate') {
-                    setMessage(response.data.message);
-                } else {
-                    setMessage(response.data.message);
-                }
-            } else {
-                const nextTurn = currentTurn === 'w' ? 'b' : 'w';
-                setCurrentTurn(nextTurn);
-                setMessage(`${nextTurn === 'w' ? 'White' : 'Black'}'s turn.`);
+            // Handle game over conditions
+            if (response.data.gameStatus && response.data.gameStatus.isOver) {
+                setGameResult(response.data.gameStatus.message);
+                setMessage(response.data.gameStatus.message);
+                return;
             }
 
-            // Handle checkmate_pending status for timer
-            if (response.data.gameStatus && response.data.gameStatus.result === 'checkmate_pending') {
-                const remainingTime = response.data.gameStatus.remainingTime;
-                setTimer(remainingTime);
-                startCountdown(remainingTime);
-            } else {
-                // Clear any existing timer if not in checkmate_pending
-                setTimer(null);
-                if (timerRef.current) {
-                    clearInterval(timerRef.current);
-                }
-            }
+            // Update turn and message for normal gameplay
+            const nextTurn = currentTurn === 'w' ? 'b' : 'w';
+            setCurrentTurn(nextTurn);
+            setMessage(response.data.message || `${nextTurn === 'w' ? 'White' : 'Black'}'s turn.`);
+
         } catch (error) {
             if (error.response?.data.requiresPromotion) {
-                // Handle promotion requirement
                 const pendingMove = error.response.data.move;
                 setPromotionModal({
                     isVisible: true,
@@ -189,10 +164,7 @@ const ChessBoard = () => {
     };
 
     const isPossibleMove = (row, col) => {
-        return possibleMoves.some(move =>{
-            console.log(move);
-            return move.to[0] === row && move.to[1] === col;
-        });
+        return possibleMoves.some(move => move.to[0] === row && move.to[1] === col);
     };
 
     const getPieceName = (piece) => {
@@ -218,59 +190,6 @@ const ChessBoard = () => {
         };
         return symbols[piece] || '';
     };
-
-    /**
-     * Starts the countdown timer.
-     * @param {number} initialTime - Initial time in seconds.
-     */
-    const startCountdown = (initialTime) => {
-        setTimer(initialTime);
-        if (timerRef.current) {
-            clearInterval(timerRef.current);
-        }
-        timerRef.current = setInterval(() => {
-            setTimer(prevTime => {
-                if (prevTime <= 1) {
-                    clearInterval(timerRef.current);
-                    setGameResult(`${currentTurn === 'w' ? 'White' : 'Black'} wins by checkmate timer!`);
-                    setMessage(`${currentTurn === 'w' ? 'White' : 'Black'} wins by checkmate timer!`);
-                    return null;
-                }
-                return prevTime - 1;
-            });
-        }, 1000);
-    };
-
-    useEffect(() => {
-        // Poll the game status every second to handle timer updates
-        const interval = setInterval(async () => {
-            try {
-                const response = await axios.post('http://localhost:5000/api/game/status', {
-                    board: board,
-                    turn: currentTurn
-                });
-                const status = response.data.gameStatus;
-
-                if (status) {
-                    if (status.result === 'checkmate_pending') {
-                        setTimer(status.remainingTime);
-                        startCountdown(status.remainingTime);
-                    } else if (status.result === 'checkmate') {
-                        setGameResult(status.message);
-                        setMessage(status.message);
-                        setTimer(null);
-                        if (timerRef.current) {
-                            clearInterval(timerRef.current);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error polling game status:', error);
-            }
-        }, 1000);
-
-        return () => clearInterval(interval);
-    }, [board, currentTurn]);
 
     if (!board) return (
         <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-100 to-slate-200">
@@ -302,11 +221,6 @@ const ChessBoard = () => {
                         'bg-blue-100 text-blue-800'}`}>
                     {message}
                 </div>
-                {timer !== null && !gameResult && (
-                    <div className="text-xl font-semibold text-red-600">
-                        Time remaining: {timer} seconds
-                    </div>
-                )}
             </div>
 
             <div className="relative">
@@ -382,7 +296,7 @@ const ChessBoard = () => {
                                rounded-xl border border-yellow-200 shadow-lg text-center
                                transform animate-fadeIn w-80">
                     <h2 className="text-2xl font-bold text-yellow-800 mb-3">Game Over!</h2>
-                    <p className="text-yellow-900 mb-4">{message}</p>
+                    <p className="text-yellow-900 mb-4">{gameResult}</p>
                     <button 
                         onClick={startNewGame}
                         className="px-6 py-3 bg-yellow-600 text-white rounded-lg 
@@ -400,10 +314,22 @@ const ChessBoard = () => {
                     <div className="bg-white p-6 rounded-lg shadow-lg">
                         <h2 className="text-xl font-semibold mb-4">Choose Promotion</h2>
                         <div className="flex gap-4 justify-center">
-                            <button onClick={() => handlePromotionChoice('q')} className="px-4 py-2 bg-blue-500 text-white rounded">Queen</button>
-                            <button onClick={() => handlePromotionChoice('r')} className="px-4 py-2 bg-blue-500 text-white rounded">Rook</button>
-                            <button onClick={() => handlePromotionChoice('b')} className="px-4 py-2 bg-blue-500 text-white rounded">Bishop</button>
-                            <button onClick={() => handlePromotionChoice('n')} className="px-4 py-2 bg-blue-500 text-white rounded">Knight</button>
+                            <button 
+                                onClick={() => handlePromotionChoice('q')} 
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                            >Queen</button>
+                            <button 
+                                onClick={() => handlePromotionChoice('r')} 
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                            >Rook</button>
+                            <button 
+                                onClick={() => handlePromotionChoice('b')} 
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                            >Bishop</button>
+                            <button 
+                                onClick={() => handlePromotionChoice('n')} 
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                            >Knight</button>
                         </div>
                     </div>
                 </div>

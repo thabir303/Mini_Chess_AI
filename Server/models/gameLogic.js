@@ -4,8 +4,6 @@ const { evaluateBoard } = require('../utils/evaluation');
 
 /**
  * Clones the current game state to avoid mutations.
- * @param {Object} game - The current game instance.
- * @returns {Object} - A cloned copy of the game.
  */
 function cloneGame(game) {
     const newGame = exports.createGame();
@@ -14,7 +12,6 @@ function cloneGame(game) {
     newGame.moveHistory = [...game.moveHistory];
     newGame.winner = game.winner;
     newGame.gameStatus = game.gameStatus;
-    newGame.checkmateTime = game.checkmateTime; // Preserve checkmateTime
     return newGame;
 }
 
@@ -26,7 +23,8 @@ function getKingPosition(game, color) {
     for (let i = 0; i < 6; i++) {
         for (let j = 0; j < 5; j++) {
             const piece = game.board[i][j];
-            if ((color === 'w' && piece === 'K') || (color === 'b' && piece === 'k')) {
+            if ((color === 'w' && piece === 'K') || 
+                (color === 'b' && piece === 'k')) {
                 return [i, j];
             }
         }
@@ -36,55 +34,64 @@ function getKingPosition(game, color) {
 
 /**
  * Determines if the specified player is in check.
- * @param {Object} game - The current game instance.
- * @param {string} color - 'w' for White or 'b' for Black.
- * @returns {boolean} - True if in check, else false.
  */
 function isCheck(game, color) {
     const kingPos = getKingPosition(game, color);
-    if (!kingPos) return false; // No king found, technically not in check
+    if (!kingPos) return false;
 
-    // Clone the game to avoid mutating the original game.turn
     const gameCopy = cloneGame(game);
-    gameCopy.turn = color === 'w' ? 'b' : 'w'; // Switch to opponent's turn
+    gameCopy.turn = color === 'w' ? 'b' : 'w';
     const opponentMoves = generateMoves(gameCopy);
 
-    // Check if any opponent move can capture the king
     return opponentMoves.some(move =>
         move.to[0] === kingPos[0] && move.to[1] === kingPos[1]
     );
 }
 
 function isCheckmate(game, color) {
-    if (!isCheck(game, color)) return false; // Must be in check to be in checkmate
+    console.log(`\nChecking checkmate for ${color}`);
+
+    if (!isCheck(game, color)) {
+        console.log(`${color} king is not in check`);
+        return false;
+    }
+
+    console.log(`${color} king IS in check - checking for escape moves`);
+
 
     const allMoves = generateMoves(game, color);
+    console.log(`Found ${allMoves.length} possible moves to try escape check`);
+
     for (const move of allMoves) {
         const gameCopy = cloneGame(game);
         try {
+            gameCopy.turn = color;
             gameCopy.makeMove(move);
             if (!isCheck(gameCopy, color)) {
+                console.log(`Not in checkmate - found escape move:`, move);
                 return false; // Found a move that escapes check
             }
+            console.log(`Move ${JSON.stringify(move)} doesn't escape check`);
         } catch (error) {
-            // Invalid move, skip
             continue;
         }
     }
-    return true; // No moves can escape check
+    console.log(`CHECKMATE CONFIRMED - ${color} has no legal moves to escape check`);
+
+    return true;
 }
 
 function isStalemate(game, color) {
-    if (isCheck(game, color)) return false; // Must not be in check for stalemate
+    if (isCheck(game, color)) return false;
     const moves = generateMoves(game, color);
     return moves.length === 0;
 }
 
 function isInsufficientMaterial(game) {
     const pieces = game.board.flat().filter(piece => piece !== '.');
+    
     if (pieces.length <= 2) return true; // Only kings left
 
-    // Check for king and minor piece vs king
     if (pieces.length === 3) {
         const nonKings = pieces.filter(p => p.toLowerCase() !== 'k');
         if (nonKings.length === 1) {
@@ -98,7 +105,6 @@ function isInsufficientMaterial(game) {
 
 /**
  * Creates a new game instance with the initial board setup.
- * @returns {Object} - A new game instance.
  */
 exports.createGame = () => {
     return {
@@ -117,85 +123,89 @@ exports.createGame = () => {
 
         /**
          * Executes a move on the board.
-         * @param {Object} move - The move to execute.
-         * @returns {Object} - The updated game status.
          */
+        /**
+ * Executes a move on the board.
+ */
         makeMove(move) {
-            console.log("Promotion: ", move?.promotion);
+            console.log('\nAttempting to make move:', move);
             const { from, to, promotion } = move;
-
-            // Validate move structure
+        
             if (!Array.isArray(from) || !Array.isArray(to) ||
                 from.length !== 2 || to.length !== 2) {
-                throw new Error('Invalid move format. Use { from: [x, y], to: [x, y], promotion: "q|r|b|n" }.');
+                throw new Error('Invalid move format');
             }
-
+        
             const [fromX, fromY] = from;
             const [toX, toY] = to;
-
-            // Validate positions
+        
             if (!isValidPosition(fromX, fromY) || !isValidPosition(toX, toY)) {
-                throw new Error('Move out of bounds.');
+                throw new Error('Move out of bounds');
             }
-
+        
             const piece = this.board[fromX][fromY];
             if (piece === '.') {
-                throw new Error('No piece at the selected position.');
+                throw new Error('No piece at selected position');
             }
-
-            // Validate piece ownership
+        
             if ((this.turn === 'w' && piece !== piece.toUpperCase()) ||
                 (this.turn === 'b' && piece !== piece.toLowerCase())) {
-                throw new Error('Invalid piece selection. It is not your turn to move this piece.');
+                throw new Error('Not your turn');
             }
-
-            // Generate valid moves for the selected piece
+        
             const validMoves = generatePieceMoves(this, [fromX, fromY]);
             const isValidMove = validMoves.some(m =>
                 m.to[0] === toX && m.to[1] === toY
             );
-
+        
             if (!isValidMove) {
-                throw new Error('Invalid move for this piece.');
+                console.log('Move not found in valid moves list');
+                throw new Error('Invalid move for this piece');
             }
-
+        
+            // Store original piece for potential move reversal
             const originalPiece = this.board[toX][toY];
+            console.log(`Moving ${piece} from [${fromX},${fromY}] to [${toX},${toY}]`);
+            
+            // Make the move
             this.board[toX][toY] = piece;
             this.board[fromX][fromY] = '.';
-
+        
             // Handle pawn promotion
             const isPawn = piece.toLowerCase() === 'p';
             const promotionRow = this.turn === 'w' ? 0 : 5;
+            
             if (isPawn && toX === promotionRow) {
+                console.log('Pawn reached promotion row');
                 if (!promotion) {
                     // Revert the move
                     this.board[fromX][fromY] = piece;
                     this.board[toX][toY] = originalPiece;
-                    throw new Error('Promotion required. Please specify a promotion piece.');
+                    throw new Error('Promotion required');
                 }
-
+        
                 const validPromotions = ['q', 'r', 'b', 'n'];
                 if (!validPromotions.includes(promotion.toLowerCase())) {
                     // Revert the move
                     this.board[fromX][fromY] = piece;
                     this.board[toX][toY] = originalPiece;
-                    throw new Error('Invalid promotion piece. Choose from q, r, b, n.');
+                    throw new Error('Invalid promotion piece');
                 }
-
-                // Promote the pawn
-                const promotedPiece = this.turn === 'w' ? promotion.toUpperCase() : promotion.toLowerCase();
-                this.board[toX][toY] = promotedPiece;
+        
+                this.board[toX][toY] = this.turn === 'w' ? 
+                    promotion.toUpperCase() : promotion.toLowerCase();
+                console.log(`Pawn promoted to ${this.board[toX][toY]}`);
             }
-
-            // Check if the move leaves the player's own king in check
+        
+            // Check if move leaves/puts own king in check
             if (isCheck(this, this.turn)) {
-                // Revert the move
+                console.log(`Move would leave/keep king in check - reverting move`);
                 this.board[fromX][fromY] = piece;
                 this.board[toX][toY] = originalPiece;
-                throw new Error('Move would put or leave your king in check.');
+                throw new Error('Move would leave king in check');
             }
-
-            // Record the move
+        
+            // Record move in history
             this.moveHistory.push({
                 from: move.from,
                 to: move.to,
@@ -203,33 +213,114 @@ exports.createGame = () => {
                 captured: originalPiece !== '.',
                 promotion: promotion || null
             });
-
-            // Switch turn to the opponent
+        
+            // Switch turns
+            const oldTurn = this.turn;
             this.turn = this.turn === 'w' ? 'b' : 'w';
-
-            // Update game status after move
-            const status = this.getGameStatus();
-            this.gameStatus = status;
-            if (status.isOver) {
-                this.winner = status.winner;
+            console.log(`Turn switched to ${this.turn}`);
+        
+            // Check if opponent is in check
+            if (isCheck(this, this.turn)) {
+                console.log(`${this.turn} is in check after move`);
+                
+                // Generate all possible moves for the opponent
+                const allPossibleMoves = generateMoves(this, this.turn);
+                console.log(`Found ${allPossibleMoves.length} possible moves to escape check`);
+                
+                let canEscapeCheck = false;
+                
+                // Try each move in the cloned game
+                for (const possibleMove of allPossibleMoves) {
+                    const gameCopy = cloneGame(this);
+                    gameCopy.turn = this.turn; // Ensure correct turn in copy
+                    
+                    try {
+                        const [fx, fy] = possibleMove.from;
+                        const [tx, ty] = possibleMove.to;
+                        
+                        // Make move directly on copied board to avoid recursive makeMove
+                        const movingPiece = gameCopy.board[fx][fy];
+                        gameCopy.board[fx][fy] = '.';
+                        gameCopy.board[tx][ty] = movingPiece;
+                        
+                        // If this position is not in check, we found an escape
+                        if (!isCheck(gameCopy, this.turn)) {
+                            canEscapeCheck = true;
+                            console.log('Found escape move:', possibleMove);
+                            break;
+                        }
+                        
+                        // Revert the move in copy
+                        gameCopy.board[fx][fy] = movingPiece;
+                        gameCopy.board[tx][ty] = '.';
+                    } catch (error) {
+                        continue;
+                    }
+                }
+        
+                if (!canEscapeCheck) {
+                    console.log('CHECKMATE CONFIRMED - no valid moves to escape check');
+                    return {
+                        isOver: true,
+                        result: 'checkmate',
+                        winner: oldTurn,
+                        message: `Checkmate! ${oldTurn === 'w' ? 'White' : 'Black'} wins!`
+                    };
+                }
+        
+                return {
+                    isOver: false,
+                    result: null,
+                    winner: null,
+                    message: `${this.turn === 'w' ? 'White' : 'Black'} is in check!`
+                };
             }
-
-            return status;
+        
+            // Check for stalemate
+            const availableMoves = generateMoves(this, this.turn);
+            if (availableMoves.length === 0) {
+                console.log('STALEMATE DETECTED');
+                return {
+                    isOver: true,
+                    result: 'stalemate',
+                    winner: 'draw',
+                    message: 'Game drawn by stalemate!'
+                };
+            }
+        
+            // Check for insufficient material
+            if (isInsufficientMaterial(this)) {
+                console.log('INSUFFICIENT MATERIAL DETECTED');
+                return {
+                    isOver: true,
+                    result: 'insufficient',
+                    winner: 'draw',
+                    message: 'Game drawn by insufficient material!'
+                };
+            }
+        
+            // Return normal game status
+            return {
+                isOver: false,
+                result: null,
+                winner: null,
+                message: `${this.turn === 'w' ? 'White' : 'Black'} to move`
+            };
         },
 
-        /**
-         * Retrieves the current game status.
-         * @returns {Object} - The game status.
-         */
         getGameStatus() {
-            const opponent = this.turn === 'w' ? 'b' : 'w';
+            const opponent = this.turn;
+            const current = opponent === 'w' ? 'b' : 'w';
+            console.log(`Checking game status: Turn = ${this.turn}, Opponent = ${opponent}`);
 
             if (isCheckmate(this, opponent)) {
+                console.log(`Game over - Checkmate! ${current} wins`);
+
                 return {
                     isOver: true,
                     result: 'checkmate',
-                    winner: this.turn,
-                    message: `Checkmate! ${this.turn === 'w' ? 'White' : 'Black'} wins!`
+                    winner: current,
+                    message: `Checkmate! ${current === 'w' ? 'White' : 'Black'} wins!`
                 };
             }
 
@@ -251,12 +342,13 @@ exports.createGame = () => {
                 };
             }
 
-            if (this.moveHistory.length >= 100) {
+            // Check if current player is in check
+            if (isCheck(this, opponent)) {
                 return {
-                    isOver: true,
-                    result: '50-move-rule',
-                    winner: 'draw',
-                    message: 'Game drawn by 50-move rule!'
+                    isOver: false,
+                    result: null,
+                    winner: null,
+                    message: `${opponent === 'w' ? 'White' : 'Black'} is in check!`
                 };
             }
 
@@ -264,7 +356,7 @@ exports.createGame = () => {
                 isOver: false,
                 result: null,
                 winner: null,
-                message: `${this.turn === 'w' ? 'White' : 'Black'} to move`
+                message: `${opponent === 'w' ? 'White' : 'Black'} to move`
             };
         },
 
@@ -272,9 +364,9 @@ exports.createGame = () => {
             const status = this.getGameStatus();
             return status.isOver;
         },
+
         getValidMoves(position) {
             const moves = generatePieceMoves(this, position);
-            console.log("Valid moves: ", moves);
             return moves.filter(move => {
                 const gameCopy = cloneGame(this);
                 try {
@@ -287,6 +379,8 @@ exports.createGame = () => {
         }
     };
 };
+
+
 /**
  * Processes a move based on the current board state and the move object.
  * @param {Array} boardState - The current board state as a 6x5 array.
@@ -365,7 +459,7 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
                 console.error('Error during minimax move generation:', err);
             }
         }
-        return { score: minEval };
+        return { score: minEval,bestMove };
     }
 };
 

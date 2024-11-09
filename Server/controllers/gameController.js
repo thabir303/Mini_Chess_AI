@@ -19,7 +19,7 @@ exports.startGame = (req, res) => {
 
 exports.playMove = (req, res) => {
     try {
-        const { board, move, turn, gameMode = 'human' } = req.body;  // Default to human mode
+        const { board, move, turn, gameMode = 'human' } = req.body; 
         
         // Validate request body
         if (!board || !move || !turn) {
@@ -28,32 +28,61 @@ exports.playMove = (req, res) => {
             });
         }
 
-        // Validate move object structure
+        // Validate move format
         if (!move.from || !move.to || 
             !Array.isArray(move.from) || !Array.isArray(move.to) ||
             move.from.length !== 2 || move.to.length !== 2) {
             return res.status(400).json({ 
-                error: 'Invalid move format. Expected {from: [x, y], to: [x, y], promotion: "q|r|b|n"}' 
+                error: 'Invalid move format. Expected {from: [x, y], to: [x, y], promotion?: "q|r|b|n"}' 
             });
         }
 
-        // Create game instance with current state
         const game = createGame();
         game.board = board;
         game.turn = turn;
 
         try {
-            // Make the human move and get the game status
+            // Validate piece selection
+            const [fromX, fromY] = move.from;
+            const piece = game.board[fromX][fromY];
+            if (piece === '.') {
+                return res.status(400).json({ error: 'No piece at selected position' });
+            }
+
+            // Validate correct player's turn
+            if ((turn === 'w' && piece !== piece.toUpperCase()) ||
+                (turn === 'b' && piece !== piece.toLowerCase())) {
+                return res.status(400).json({ 
+                    error: `Invalid piece selection. It is ${turn === 'w' ? 'White' : 'Black'}'s turn.`
+                });
+            }
+
+            // Get valid moves for the selected piece
+            const validMoves = game.getValidMoves(move.from);
+            const isValidMove = validMoves.some(validMove => 
+                validMove.to[0] === move.to[0] && validMove.to[1] === move.to[1]
+            );
+
+            if (!isValidMove) {
+                return res.status(400).json({ error: 'Invalid move for this piece' });
+            }
+
+            // Make the human move and get game status
             const moveResult = game.makeMove(move);
-            
+            console.log('Move result:', moveResult);
+
+            if (moveResult.isOver) {
+                console.log(`Game over detected in controller - ${moveResult.message}`);
+            }
+
             // Prepare response object
             const response = {
                 board: game.board,
-                turn: game.turn,  // Next player's turn
+                turn: game.turn,
                 lastMove: move,
                 isGameOver: moveResult.isOver,
                 message: moveResult.message,
-                gameStatus: moveResult // Include entire game status
+                gameStatus: moveResult
             };
 
             // Handle AI move if in 'ai' mode and game is not over
@@ -61,13 +90,13 @@ exports.playMove = (req, res) => {
                 try {
                     const aiResponse = runMinimax(game, 3); // Depth of 3 for now
                     if (aiResponse && aiResponse.bestMove) {
-                        game.makeMove(aiResponse.bestMove); // Execute AI move
+                        const aiMoveResult = game.makeMove(aiResponse.bestMove);
                         response.board = game.board;
                         response.turn = game.turn;
                         response.lastMove = aiResponse.bestMove;
-                        response.isGameOver = game.isGameOver();
-                        response.message = game.gameStatus.message;
-                        response.gameStatus = game.gameStatus;
+                        response.isGameOver = aiMoveResult.isOver;
+                        response.message = aiMoveResult.message;
+                        response.gameStatus = aiMoveResult;
                     }
                 } catch (aiError) {
                     console.log('AI move generation skipped:', aiError.message);
@@ -83,6 +112,7 @@ exports.playMove = (req, res) => {
                 return res.status(400).json({ 
                     error: moveError.message,
                     requiresPromotion: true,
+                    validPromotions: ['q', 'r', 'b', 'n'],
                     move: move
                 });
             }
@@ -104,17 +134,15 @@ exports.getValidMoves = (req, res) => {
     try {
         const { board, position, turn } = req.body;
         
-        // Validate request body
         if (!board || !position || !turn) {
             return res.status(400).json({ 
-                error: 'Missing required fields. Need board, position, and turn.' 
+                error: 'Missing required fields' 
             });
         }
 
-        // Validate position format
         if (!Array.isArray(position) || position.length !== 2) {
             return res.status(400).json({ 
-                error: 'Invalid position format. Expected [x, y]' 
+                error: 'Invalid position format' 
             });
         }
 
@@ -122,12 +150,10 @@ exports.getValidMoves = (req, res) => {
         game.board = board;
         game.turn = turn;
         
-        // Get valid moves for the selected piece
-        const validMoves = game.getValidMoves(position);
-        
-        // Validate piece selection
         const [x, y] = position;
         const piece = game.board[x][y];
+
+        // Validate piece selection
         const isValidPiece = piece !== '.' && (
             (turn === 'w' && piece === piece.toUpperCase()) ||
             (turn === 'b' && piece === piece.toLowerCase())
@@ -140,10 +166,12 @@ exports.getValidMoves = (req, res) => {
             });
         }
 
+        const validMoves = game.getValidMoves(position);
+        
         res.status(200).json({
             validMoves,
             message: validMoves.length === 0 ? 
-                'No valid moves available for this piece' : 
+                'No valid moves available' : 
                 `Found ${validMoves.length} valid moves`
         });
 
