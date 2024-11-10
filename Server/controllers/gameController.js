@@ -1,6 +1,6 @@
 // /Server/controllers/gameController.js
 
-const { createGame, getBestMove } = require('../models/gameLogic');
+const { createGame, getBestMove, isCheck, generateMoves, cloneGame } = require('../models/gameLogic');
 
 const gameController = {
     startGame: (req, res) => {
@@ -175,41 +175,187 @@ const gameController = {
 
     getAIMove: async (req, res) => {
         try {
-            const { board, turn } = req.body;
+            const { board, turn, gameMode } = req.body;
 
+            // Input validation
             if (!board || !turn) {
                 return res.status(400).json({ 
                     error: 'Missing required fields' 
                 });
             }
 
-            const game = createGame();
-            game.board = board;
-            game.turn = turn;
-
-            const aiMove = getBestMove(game);
-            
-            if (!aiMove) {
+            if (!Array.isArray(board) || board.length !== 6 || 
+                !board.every(row => Array.isArray(row) && row.length === 5)) {
                 return res.status(400).json({ 
-                    error: 'No valid AI move found' 
+                    error: 'Invalid board format' 
                 });
             }
 
-            const moveResult = game.makeMove(aiMove);
+            if (turn !== 'w' && turn !== 'b') {
+                return res.status(400).json({ 
+                    error: 'Invalid turn value' 
+                });
+            }
 
-            res.status(200).json({ 
+            // Initialize game state
+            const game = createGame();
+            game.board = JSON.parse(JSON.stringify(board));
+            game.turn = turn;
+
+            // Check current game status
+            const currentStatus = game.getGameStatus();
+            if (currentStatus.isOver) {
+                return res.status(200).json({
+                    board: game.board,
+                    turn: game.turn,
+                    isGameOver: true,
+                    gameStatus: currentStatus,
+                    message: currentStatus.message
+                });
+            }
+
+            let aiMove = null;
+            let moveResult = null;
+            const maxAttempts = 3;
+            const timeLimit = gameMode === 'ai-vs-ai' ? 2000 : 3000;
+
+            // If in check, handle it with priority
+            if (isCheck(game, turn)) {
+                console.log(`${turn === 'w' ? 'White' : 'Black'} is in check - finding escape move...`);
+                
+                const allMoves = generateMoves(game, turn);
+                console.log(`Generated ${allMoves.length} possible moves to escape check`);
+
+                // First try moves that capture attacking pieces
+                const capturingMoves = allMoves.filter(move => {
+                    const targetSquare = game.board[move.to[0]][move.to[1]];
+                    return targetSquare !== '.';
+                });
+
+                // Try capturing moves first
+                for (const move of capturingMoves) {
+                    const gameCopy = cloneGame(game);
+                    try {
+                        gameCopy.makeMove(move);
+                        if (!isCheck(gameCopy, turn)) {
+                            aiMove = move;
+                            moveResult = game.makeMove(move);
+                            console.log('Found escape move by capture');
+                            break;
+                        }
+                    } catch (error) {
+                        continue;
+                    }
+                }
+
+                // If no capturing moves work, try all other moves
+                if (!aiMove) {
+                    for (const move of allMoves) {
+                        const gameCopy = cloneGame(game);
+                        try {
+                            gameCopy.makeMove(move);
+                            if (!isCheck(gameCopy, turn)) {
+                                aiMove = move;
+                                moveResult = game.makeMove(move);
+                                console.log('Found escape move');
+                                break;
+                            }
+                        } catch (error) {
+                            continue;
+                        }
+                    }
+                }
+
+                // If still no valid move, it's checkmate
+                if (!aiMove) {
+                    console.log('No valid moves to escape check - Checkmate');
+                    const status = {
+                        isOver: true,
+                        result: 'checkmate',
+                        winner: turn === 'w' ? 'b' : 'w',
+                        message: `Checkmate! ${turn === 'w' ? 'Black' : 'White'} wins!`
+                    };
+                    return res.status(200).json({
+                        board: game.board,
+                        turn: game.turn,
+                        isGameOver: true,
+                        gameStatus: status
+                    });
+                }
+            } else {
+                // Not in check, try to make best move
+                for (let attempt = 0; attempt < maxAttempts && !aiMove; attempt++) {
+                    try {
+                        const gameCopy = cloneGame(game);
+                        const possibleMove = getBestMove(gameCopy, timeLimit);
+                        
+                        if (possibleMove) {
+                            // Validate move before making it
+                            const validMoves = game.getValidMoves([possibleMove.from[0], possibleMove.from[1]]);
+                            const isValidMove = validMoves.some(m =>
+                                m.to[0] === possibleMove.to[0] && m.to[1] === possibleMove.to[1]
+                            );
+
+                            if (isValidMove) {
+                                moveResult = game.makeMove(possibleMove);
+                                aiMove = possibleMove;
+                                break;
+                            }
+                        }
+                    } catch (error) {
+                        console.log(`Attempt ${attempt + 1} failed:`, error.message);
+                        continue;
+                    }
+                }
+
+                // If still no move found, try any valid move
+                if (!aiMove) {
+                    console.log('Trying fallback moves...');
+                    const moves = generateMoves(game, turn);
+                    for (const move of moves) {
+                        try {
+                            const gameCopy = cloneGame(game);
+                            gameCopy.makeMove(move);
+                            aiMove = move;
+                            moveResult = game.makeMove(move);
+                            console.log('Found fallback move');
+                            break;
+                        } catch (error) {
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Final check if we found a valid move
+            if (!aiMove || !moveResult) {
+                console.log('No valid moves found');
+                const status = game.getGameStatus();
+                return res.status(200).json({
+                    board: game.board,
+                    turn: game.turn,
+                    isGameOver: status.isOver,
+                    gameStatus: status,
+                    message: status.message || 'No valid moves available'
+                });
+            }
+
+            // Success response
+            return res.status(200).json({ 
                 move: aiMove,
                 board: game.board,
                 turn: game.turn,
                 isGameOver: moveResult.isOver,
                 message: moveResult.message,
-                gameStatus: moveResult
+                gameStatus: moveResult,
+                thinking: false
             });
 
         } catch (error) {
-            console.error('Error generating AI move:', error);
+            console.error('Error in getAIMove:', error);
             res.status(500).json({ 
-                error: 'Failed to generate AI move' 
+                error: 'Internal server error while generating AI move',
+                details: error.message
             });
         }
     }

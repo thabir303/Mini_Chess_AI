@@ -20,6 +20,7 @@ const ChessBoard = () => {
         try {
             setLoading(true);
             setGameMode(mode);
+            setGameResult(null);
             const response = await axios.post('http://localhost:5000/api/game/start', {
                 gameMode: mode
             });
@@ -29,48 +30,75 @@ const ChessBoard = () => {
             setSelectedPiece(null);
             setPossibleMoves([]);
             setCurrentTurn(response.data.turn || 'w');
-            setGameResult(null);
+            // setGameResult(null);
             setPromotionModal({ isVisible: false, move: null });
 
             // If AI vs AI, start the game loop
             if (mode === 'ai-vs-ai') {
-                await handleAIvsAI(response.data.board, 'w');
+                setTimeout(() => {
+                    handleAIvsAI(response.data.board, 'w');
+                }, 1000);
             }
+            setLoading(false);
         } catch (error) {
             setMessage('Error starting game: ' + error.message);
-        } finally {
             setLoading(false);
-        }
+        } 
+        // finally {
+        //     setLoading(false);
+        // }
     };
     const handleAIvsAI = async (currentBoard, turn) => {
-        if (gameResult) return;
+        if (!currentBoard || loading || gameResult) return;
         
         try {
+            setLoading(true);
             const response = await axios.post('http://localhost:5000/api/game/ai-move', {
                 board: currentBoard,
                 turn: turn,
                 gameMode: 'ai-vs-ai'
             });
 
+            if (response.data) {
             setBoard(response.data.board);
             setLastMove(response.data.move);
             setCurrentTurn(response.data.turn);
             setMessage(response.data.message);
 
-            if (response.data.isGameOver) {
-                setGameResult(response.data.message);
+            if (response.data.gameStatus && response.data.gameStatus.isOver) {
+                setGameResult(response.data.gameStatus.message);
+                setLoading(false);
                 return;
             }
 
             // Add a small delay between moves
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Continue the game with the next move
-            handleAIvsAI(response.data.board, response.data.turn);
-        } catch (error) {
-            setMessage('Error in AI vs AI game: ' + error.message);
+            if (!response.data.gameStatus?.isOver) {
+                setLoading(false);
+                handleAIvsAI(response.data.board, response.data.turn);
+            }
         }
+            // Continue the game with the next move
+            // handleAIvsAI(response.data.board, response.data.turn);
+        } catch (error) {
+            console.error('Error in AI vs AI game:', error);
+            setMessage('Error in AI vs AI game: ' + error.message);
+            setLoading(false);
+         }
     };
+
+    useEffect(() => {
+        let mounted = true;
+        
+        const cleanup = () => {
+            mounted = false;
+            
+            setLoading(false);
+        };
+    
+        return cleanup;
+    }, []);
 
     useEffect(() => {
         startNewGame('human');
@@ -239,7 +267,7 @@ const ChessBoard = () => {
     return (
         <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-8">
             <div className="mb-8 text-center">
-                <h1 className="text-4xl font-bold text-slate-800 mb-2">MiniChess</h1>
+                <h1 className="text-4xl font-bold text-slate-800 mb-2">Mini Chess</h1>
                 <div className="flex gap-4 mb-4 justify-center">
                     <button
                         onClick={() => startNewGame('human')}
@@ -290,8 +318,8 @@ const ChessBoard = () => {
     
             <div className="relative">
                 {/* Turn indicator */}
-                <div className="absolute -left-32 top-1/2 transform -translate-y-1/2 
-                               bg-white p-4 rounded-xl shadow-lg text-center w-24">
+                <div className="absolute -left-40 top-1/2 transform -translate-y-1/2 
+                               bg-white p-4 rounded-xl shadow-lg text-center w-32">
                     <div className={`text-lg font-semibold mb-2 
                         ${currentTurn === 'w' ? 'text-slate-800' : 'text-slate-700'}`}>
                         {currentTurn === 'w' ? 'White' : 'Black'}
@@ -299,80 +327,120 @@ const ChessBoard = () => {
                     <div className={`w-8 h-8 rounded-full mx-auto 
                         ${currentTurn === 'w' ? 'bg-white' : 'bg-gray-800'} 
                         border-2 border-gray-400 shadow-inner`}></div>
+                    <div className="mt-2 text-sm text-gray-600">to move</div>
                 </div>
     
                 {/* Game mode indicator */}
-                <div className="absolute -right-32 top-1/2 transform -translate-y-1/2 
-                               bg-white p-4 rounded-xl shadow-lg text-center w-24">
+                <div className="absolute -right-40 top-1/2 transform -translate-y-1/2 
+                               bg-white p-4 rounded-xl shadow-lg text-center w-32">
                     <div className="text-sm font-semibold mb-2 text-gray-700">
-                        Mode:
+                        Game Mode
                     </div>
-                    <div className="text-xs font-medium">
+                    <div className="text-base font-medium bg-gray-100 py-1 px-2 rounded">
                         {gameMode === 'human' ? 'Human vs Human' : 
                          gameMode === 'ai' ? 'Human vs AI' : 'AI vs AI'}
                     </div>
                 </div>
     
-                <div className="inline-block bg-slate-800 p-6 rounded-xl shadow-2xl">
-                    {board.map((row, rowIndex) => (
-                        <div key={rowIndex} className="flex">
-                            {row.map((piece, colIndex) => {
-                                const isSelected = selectedPiece &&
-                                    selectedPiece.row === rowIndex &&
-                                    selectedPiece.col === colIndex;
-    
-                                const isLastMovePart = isLastMove(rowIndex, colIndex);
-                                const isPossible = isPossibleMove(rowIndex, colIndex);
-    
-                                const squareColor = (rowIndex + colIndex) % 2 === 0 ?
-                                    'bg-[#F0D9B5]' : 'bg-[#B58863]';
-    
-                                return (
-                                    <div
-                                        key={colIndex}
-                                        onClick={() => handleSquareClick(rowIndex, colIndex)}
-                                        className={`
-                                            w-16 h-16 flex items-center justify-center text-4xl
-                                            cursor-pointer relative transition-all duration-200
-                                            ${squareColor}
-                                            ${isSelected ? 'ring-4 ring-yellow-400 ring-opacity-70 shadow-inner' : ''}
-                                            ${isLastMovePart ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
-                                            ${(gameMode === 'ai-vs-ai' || (gameMode === 'ai' && currentTurn === 'b')) ? 
-                                              'cursor-not-allowed' : 'hover:brightness-110'}
-                                        `}
-                                    >
-                                        <span className={`
-                                            chess-piece select-none transform transition-transform
-                                            ${piece === piece.toUpperCase() 
-                                                ? 'text-[#FFFFFF] drop-shadow-[2px_2px_1px_rgba(0,0,0,0.5)]' 
-                                                : 'text-[#000000] drop-shadow-[1px_1px_1px_rgba(255,255,255,0.5)]'}
-                                            ${loading ? 'opacity-50' : 'opacity-100'}
-                                            ${isSelected ? 'scale-110' : ''}
-                                            hover:scale-105
-                                        `}>
-                                            {getPieceSymbol(piece)}
-                                        </span>
-                                        {isPossible && (
-                                            <div className={`
-                                                absolute inset-0 flex items-center justify-center
-                                                ${piece === '.' 
-                                                    ? 'bg-green-500 opacity-40 rounded-full w-4 h-4 mx-auto' 
-                                                    : 'ring-4 ring-green-500 ring-opacity-60'}
-                                                transition-all duration-200
-                                            `} />
-                                        )}
-                                    </div>
-                                );
-                            })}
+                {/* Chess Board Container */}
+                <div className="inline-block bg-slate-800 p-8 rounded-xl shadow-2xl">
+                    <div className="relative">
+                        {/* Rank numbers */}
+                        <div className="absolute right-full pr-3 top-0 bottom-0 flex flex-col justify-around text-gray-300 text-sm font-medium">
+                            {[0, 1, 2, 3, 4, 5].map(i => (
+                                <div key={i} className="h-16 flex items-center">{6 - i}</div>
+                            ))}
                         </div>
-                    ))}
+                        
+                        {/* File letters */}
+                        <div className="absolute left-0 right-0 bottom-full pb-3 flex justify-around text-gray-300 text-sm font-medium">
+                            {['a', 'b', 'c', 'd', 'e'].map(letter => (
+                                <div key={letter} className="w-16 text-center">{letter}</div>
+                            ))}
+                        </div>
+    
+                        {/* Board squares */}
+                        <div className="relative">
+                            {board.map((row, rowIndex) => (
+                                <div key={rowIndex} className="flex">
+                                    {row.map((piece, colIndex) => {
+                                        const isSelected = selectedPiece &&
+                                            selectedPiece.row === rowIndex &&
+                                            selectedPiece.col === colIndex;
+    
+                                        const isLastMovePart = isLastMove(rowIndex, colIndex);
+                                        const isPossible = isPossibleMove(rowIndex, colIndex);
+                                        const isCheck = piece.toLowerCase() === 'k' && 
+                                            ((currentTurn === 'w' && piece === 'K') || 
+                                             (currentTurn === 'b' && piece === 'k')) &&
+                                            message.includes('check');
+    
+                                        const squareColor = (rowIndex + colIndex) % 2 === 0
+                                            ? 'bg-[#F0D9B5]' 
+                                            : 'bg-[#B58863]';
+    
+                                        return (
+                                            <div
+                                                key={colIndex}
+                                                onClick={() => handleSquareClick(rowIndex, colIndex)}
+                                                className={`
+                                                    w-16 h-16 flex items-center justify-center text-4xl
+                                                    cursor-pointer relative transition-all duration-200
+                                                    ${squareColor}
+                                                    ${isSelected ? 'after:absolute after:inset-0 after:bg-yellow-400 after:opacity-30' : ''}
+                                                    ${isLastMovePart ? 'after:absolute after:inset-0 after:bg-indigo-500 after:opacity-20' : ''}
+                                                    ${(gameMode === 'ai-vs-ai' || (gameMode === 'ai' && currentTurn === 'b')) 
+                                                        ? 'cursor-not-allowed' 
+                                                        : 'hover:after:absolute hover:after:inset-0 hover:after:bg-gray-900 hover:after:opacity-10'}
+                                                    group
+                                                `}
+                                            >
+                                                <span className={`
+                                                    chess-piece select-none transform transition-all duration-200
+                                                    relative z-10
+                                                    ${piece === piece.toUpperCase() 
+                                                        ? 'text-[#FFFFFF] drop-shadow-[2px_2px_1px_rgba(0,0,0,0.5)]' 
+                                                        : 'text-[#000000] drop-shadow-[1px_1px_1px_rgba(255,255,255,0.5)]'}
+                                                    ${loading ? 'opacity-50' : 'opacity-100'}
+                                                    ${isSelected ? 'scale-110' : ''}
+                                                    ${isCheck ? 'text-red-500' : ''}
+                                                    group-hover:scale-105
+                                                `}>
+                                                    {getPieceSymbol(piece)}
+                                                </span>
+    
+                                                {isPossible && (
+                                                    <div className={`
+                                                        absolute inset-0 flex items-center justify-center z-0
+                                                        ${piece === '.' 
+                                                            ? 'after:content-[""] after:absolute after:w-3 after:h-3 after:rounded-full after:bg-emerald-500 after:opacity-40' 
+                                                            : 'ring-2 ring-emerald-500 ring-opacity-60 after:absolute after:inset-0 after:bg-emerald-500 after:opacity-20'}
+                                                        transition-all duration-200
+                                                    `} />
+                                                )}
+    
+                                                {isLastMovePart && (
+                                                    <>
+                                                        <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-indigo-400 opacity-40"></div>
+                                                        <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-indigo-400 opacity-40"></div>
+                                                        <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-indigo-400 opacity-40"></div>
+                                                        <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-indigo-400 opacity-40"></div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </div>
     
             {gameResult && (
                 <div className="mt-8 p-6 bg-gradient-to-r from-yellow-50 to-yellow-100 
                                rounded-xl border border-yellow-200 shadow-lg text-center
-                               transform animate-fadeIn w-80">
+                               transform animate-fadeIn w-96">
                     <h2 className="text-2xl font-bold text-yellow-800 mb-3">Game Over!</h2>
                     <p className="text-yellow-900 mb-4">{gameResult}</p>
                     <div className="flex gap-4 justify-center">
@@ -403,30 +471,19 @@ const ChessBoard = () => {
                     <div className="bg-white p-6 rounded-lg shadow-lg">
                         <h2 className="text-xl font-semibold mb-4">Choose Promotion</h2>
                         <div className="flex gap-4 justify-center">
-                            <button 
-                                onClick={() => handlePromotionChoice('q')} 
-                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >
-                                Queen {getPieceSymbol(currentTurn === 'w' ? 'Q' : 'q')}
-                            </button>
-                            <button 
-                                onClick={() => handlePromotionChoice('r')} 
-                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >
-                                Rook {getPieceSymbol(currentTurn === 'w' ? 'R' : 'r')}
-                            </button>
-                            <button 
-                                onClick={() => handlePromotionChoice('b')} 
-                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >
-                                Bishop {getPieceSymbol(currentTurn === 'w' ? 'B' : 'b')}
-                            </button>
-                            <button 
-                                onClick={() => handlePromotionChoice('n')} 
-                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >
-                                Knight {getPieceSymbol(currentTurn === 'w' ? 'N' : 'n')}
-                            </button>
+                            {['q', 'r', 'b', 'n'].map(piece => (
+                                <button 
+                                    key={piece}
+                                    onClick={() => handlePromotionChoice(piece)}
+                                    className="px-6 py-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600
+                                             transition-all duration-200 shadow-md hover:shadow-lg
+                                             transform hover:-translate-y-0.5"
+                                >
+                                    <span className="text-3xl">
+                                        {getPieceSymbol(currentTurn === 'w' ? piece.toUpperCase() : piece)}
+                                    </span>
+                                </button>
+                            ))}
                         </div>
                     </div>
                 </div>

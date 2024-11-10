@@ -158,7 +158,16 @@ function getBestMove(game, timeLimit = 5000) {
     const startTime = Date.now();
     const endTime = startTime + timeLimit;
     let bestMove = null;
+    let bestMoves = []; // Array to store top moves
     let depth = 1;
+
+    // Track move history patterns
+    const movePatterns = {};
+    for (let i = 0; i < game.moveHistory.length; i++) {
+        const move = game.moveHistory[i];
+        const key = `${move.from[0]},${move.from[1]}-${move.to[0]},${move.to[1]}`;
+        movePatterns[key] = (movePatterns[key] || 0) + 1;
+    }
 
     try {
         transpositionTable.clear();
@@ -171,15 +180,114 @@ function getBestMove(game, timeLimit = 5000) {
                 true,
                 endTime
             );
+
             if (result.bestMove) {
-                bestMove = result.bestMove;
-                console.log(`Depth ${depth} completed. Best move:`, bestMove);
+                // Store moves with scores close to the best move
+                const tolerance = 50; // Tolerance for considering moves as equally good
+                bestMoves = [];
+                const moves = generateMoves(game);
+                
+                for (const move of moves) {
+                    const gameCopy = cloneGame(game);
+                    try {
+                        gameCopy.makeMove(move);
+                        const evaluation = -alphaBeta(
+                            gameCopy,
+                            depth - 1,
+                            -Infinity,
+                            Infinity,
+                            false,
+                            endTime
+                        ).score;
+
+                       // Apply penalties for repetitive moves
+                        const moveKey = `${move.from[0]},${move.from[1]}-${move.to[0]},${move.to[1]}`;
+                        const repetitionCount = movePatterns[moveKey] || 0;
+                        evaluation -= repetitionCount * 100;  // Heavy penalty for repeated moves
+
+                        // Apply penalty for using recently moved pieces
+                        const piece = game.board[move.from[0]][move.from[1]];
+                        const recentMoves = game.moveHistory.slice(-6);
+                        const pieceRecentMoves = recentMoves.filter(m => 
+                            game.board[m.from[0]][m.from[1]] === piece
+                        ).length;
+                        evaluation -= pieceRecentMoves * 50;  // Penalty for using same piece repeatedly
+
+                        // Store move with its adjusted evaluation
+                        bestMoves.push({ move, evaluation });
+                    } catch {
+                        continue;
+                    }
+                }
+                // Sort moves by evaluation
+                bestMoves.sort((a, b) => b.evaluation - a.evaluation);
+
+                // Take top moves within a reasonable threshold
+                const threshold = bestMoves[0]?.evaluation - 200;  // Allow moves within 200 points of best
+                bestMoves = bestMoves.filter(m => m.evaluation >= threshold);
+  
+                // Randomly select from the best moves
+                if (bestMoves.length > 0) {
+                    const weights = bestMoves.map((m, index) => 1 / (index + 1));
+                    const totalWeight = weights.reduce((a, b) => a + b, 0);
+                    let random = Math.random() * totalWeight;
+                    for (let i = 0; i < weights.length; i++) {
+                        random -= weights[i];
+                        if (random <= 0) {
+                            bestMove = bestMoves[i].move;
+                            break;
+                        }
+                    }
+                    
+                } 
+               console.log(`Depth ${depth} completed. Found ${bestMoves.length} good moves.`); 
+                
             }
             depth++;
         }
     } catch (error) {
         if (error.message !== 'Time limit exceeded') throw error;
     }
+
+    if (!bestMove) {
+        const legalMoves = generateMoves(game);
+        if (legalMoves.length > 0) {
+            bestMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+        }
+    }
+
+    // // If we have multiple good moves, avoid repeating the last move if possible
+    // if (bestMoves.length > 1 && game.moveHistory.length > 0) {
+    //     const lastMove = game.moveHistory[game.moveHistory.length - 1];
+    //     bestMoves = bestMoves.filter(move => 
+    //         !(move.from[0] === lastMove.to[0] && 
+    //           move.from[1] === lastMove.to[1] && 
+    //           move.to[0] === lastMove.from[0] && 
+    //           move.to[1] === lastMove.from[1])
+    //     );
+    // }
+
+    // // Add diversity bonus to moves using different pieces
+    // if (bestMoves.length > 0) {
+    //     const lastFewMoves = game.moveHistory.slice(-4);
+    //     const recentlyMovedPieces = new Set(
+    //         lastFewMoves.map(m => game.board[m.to[0]][m.to[1]])
+    //     );
+
+    //     bestMoves = bestMoves.sort((a, b) => {
+    //         const pieceA = game.board[a.from[0]][a.from[1]];
+    //         const pieceB = game.board[b.from[0]][b.from[1]];
+            
+    //         const scoreA = recentlyMovedPieces.has(pieceA) ? 0 : 1;
+    //         const scoreB = recentlyMovedPieces.has(pieceB) ? 0 : 1;
+            
+    //         return scoreB - scoreA;
+    //     });
+
+    //     // Select one of the top moves with some randomness
+    //     const topMoves = bestMoves.slice(0, Math.min(3, bestMoves.length));
+    //     bestMove = topMoves[Math.floor(Math.random() * topMoves.length)];
+    // }
 
     return bestMove;
 }
@@ -599,21 +707,76 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
  * @returns {number} - The evaluation score.
  */
 function evaluatePosition(game) {
-    console.log('Evaluating position.');
     let score = evaluateBoard(game);
 
-    // Add positional bonuses
-    if (game.gameStatus && game.gameStatus.isOver && game.gameStatus.result === 'checkmate') {
-        score += (game.turn === 'b' ? 20000 : -20000);
+    // Analyze move history for patterns
+    if (game.moveHistory.length > 0) {
+        const lastMove = game.moveHistory[game.moveHistory.length - 1];
+        const piece = game.board[lastMove.to[0]][lastMove.to[1]];
+        
+        // Check last 8 moves for patterns
+        const recentMoves = game.moveHistory.slice(-8);
+        const pieceMoveCounts = {};
+        const positionCounts = {};
+
+        recentMoves.forEach(move => {
+            const piece = game.board[move.to[0]][move.to[1]];
+            pieceMoveCounts[piece] = (pieceMoveCounts[piece] || 0) + 1;
+            
+            const posKey = `${move.from[0]},${move.from[1]}-${move.to[0]},${move.to[1]}`;
+            positionCounts[posKey] = (positionCounts[posKey] || 0) + 1;
+        });
+
+        // Penalize piece overuse
+        Object.values(pieceMoveCounts).forEach(count => {
+            if (count > 2) {  // If piece used more than twice in last 8 moves
+                score -= (count - 2) * 75;
+            }
+        });
+
+        // Penalize position repetition
+        Object.values(positionCounts).forEach(count => {
+            if (count > 1) {  // If position repeated
+                score -= (count - 1) * 100;
+            }
+        });
+
+        // Encourage piece development
+        const unusedPieces = getAllPieces(game).filter(p => 
+            !recentMoves.some(m => 
+                m.from[0] === p.row && m.from[1] === p.col
+            )
+        );
+        score -= unusedPieces.length * 20;  // Small penalty for unused pieces
     }
 
-    if (game.gameStatus && (game.gameStatus.result === 'stalemate' || game.gameStatus.result === 'insufficient')) {
-        score = 0;
+    // Add checkmate/stalemate evaluation
+    if (game.gameStatus && game.gameStatus.isOver) {
+        if (game.gameStatus.result === 'checkmate') {
+            score += (game.turn === 'b' ? 20000 : -20000);
+        } else {
+            score = 0;  // Stalemate or insufficient material
+        }
     }
 
     return score;
 }
 
+function getAllPieces(game) {
+    const pieces = [];
+    const color = game.turn;
+    for (let i = 0; i < 6; i++) {
+        for (let j = 0; j < 5; j++) {
+            const piece = game.board[i][j];
+            if (piece !== '.' && 
+                ((color === 'w' && piece === piece.toUpperCase()) ||
+                 (color === 'b' && piece === piece.toLowerCase()))) {
+                pieces.push({ row: i, col: j, piece });
+            }
+        }
+    }
+    return pieces;
+}
 /**
  * Generates all possible moves for the specified player.
  * @param {Object} game - The current game instance.
