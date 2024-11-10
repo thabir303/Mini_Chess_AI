@@ -1,13 +1,24 @@
+// /Server/app.js
+
 const express = require('express');
-const gameRoutes = require('./routes/gameRoutes');
 const cors = require('cors');
+const gameRoutes = require('./routes/gameRoutes');
 
 const app = express();
 
-// Enable CORS to allow requests from the frontend running on port 5173
-app.use(cors({ origin: 'http://localhost:5173' }));
-
+app.use(cors());
 app.use(express.json());
+
 app.use('/api/game', gameRoutes);
+
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
 
 module.exports = app;

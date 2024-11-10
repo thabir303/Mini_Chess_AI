@@ -2,9 +2,28 @@
 
 const { evaluateBoard } = require('../utils/evaluation');
 
-/**
- * Clones the current game state to avoid mutations.
- */
+const transpositionTable = {
+    table: new Map(),
+    maxSize: 1000000,
+    generateHash: (board, turn) => JSON.stringify(board) + turn,
+    store: function(board, turn, depth, value, flag, bestMove) {
+        const hash = this.generateHash(board, turn);
+        this.table.set(hash, { depth, value, flag, bestMove });
+        if (this.table.size > this.maxSize) {
+            const firstKey = this.table.keys().next().value;
+            this.table.delete(firstKey);
+        }
+    },
+    lookup: function(board, turn) {
+        const hash = this.generateHash(board, turn);
+        return this.table.get(hash);
+    },
+    clear: function() {
+        this.table.clear();
+    }
+};
+
+
 function cloneGame(game) {
     const newGame = exports.createGame();
     newGame.board = JSON.parse(JSON.stringify(game.board));
@@ -46,6 +65,123 @@ function isCheck(game, color) {
     return opponentMoves.some(move =>
         move.to[0] === kingPos[0] && move.to[1] === kingPos[1]
     );
+}
+
+function quiescenceSearch(game, alpha, beta, depth, maxDepth = 4) {
+    if (depth >= maxDepth) return evaluateBoard(game);
+
+    const standPat = evaluateBoard(game);
+    
+    if (standPat >= beta) return beta;
+    if (alpha < standPat) alpha = standPat;
+
+    const moves = generateMoves(game).filter(move => {
+        const [toX, toY] = move.to;
+        return game.board[toX][toY] !== '.';
+    });
+    
+    for (const move of moves) {
+        const gameCopy = cloneGame(game);
+        try {
+            gameCopy.makeMove(move);
+            const score = -quiescenceSearch(gameCopy, -beta, -alpha, depth + 1, maxDepth);
+            if (score >= beta) return beta;
+            if (score > alpha) alpha = score;
+        } catch {
+            continue;
+        }
+    }
+    return alpha;
+}
+
+function alphaBeta(game, depth, alpha, beta, maximizingPlayer, timeLimit) {
+    if (Date.now() >= timeLimit) throw new Error('Time limit exceeded');
+
+    const ttEntry = transpositionTable.lookup(game.board, game.turn);
+    if (ttEntry && ttEntry.depth >= depth) {
+        if (ttEntry.flag === 'exact') return { score: ttEntry.value, bestMove: ttEntry.bestMove };
+        if (ttEntry.flag === 'lowerbound' && ttEntry.value > alpha) alpha = ttEntry.value;
+        if (ttEntry.flag === 'upperbound' && ttEntry.value < beta) beta = ttEntry.value;
+        if (alpha >= beta) return { score: ttEntry.value, bestMove: ttEntry.bestMove };
+    }
+
+    if (depth === 0 || game.isGameOver()) {
+        const score = quiescenceSearch(game, alpha, beta, 0);
+        return { score };
+    }
+
+    const moves = generateMoves(game);
+    let bestMove = null;
+    let bestScore = maximizingPlayer ? -Infinity : Infinity;
+    let flag = 'alpha';
+
+    for (const move of moves) {
+        const gameCopy = cloneGame(game);
+        try {
+            gameCopy.makeMove(move);
+            const evaluation = alphaBeta(gameCopy, depth - 1, -beta, -alpha, !maximizingPlayer, timeLimit).score;
+            const score = -evaluation;
+
+            if (maximizingPlayer) {
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMove = move;
+                }
+                if (score > alpha) {
+                    alpha = score;
+                    flag = 'exact';
+                }
+            } else {
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestMove = move;
+                }
+                if (score < beta) {
+                    beta = score;
+                    flag = 'exact';
+                }
+            }
+
+            if (alpha >= beta) {
+                flag = maximizingPlayer ? 'lowerbound' : 'upperbound';
+                break;
+            }
+        } catch {
+            continue;
+        }
+    }
+
+    transpositionTable.store(game.board, game.turn, depth, bestScore, flag, bestMove);
+    return { score: bestScore, bestMove };
+}
+function getBestMove(game, timeLimit = 5000) {
+    const startTime = Date.now();
+    const endTime = startTime + timeLimit;
+    let bestMove = null;
+    let depth = 1;
+
+    try {
+        transpositionTable.clear();
+        while (Date.now() < endTime && depth <= 10) {
+            const result = alphaBeta(
+                game,
+                depth,
+                -Infinity,
+                Infinity,
+                true,
+                endTime
+            );
+            if (result.bestMove) {
+                bestMove = result.bestMove;
+                console.log(`Depth ${depth} completed. Best move:`, bestMove);
+            }
+            depth++;
+        }
+    } catch (error) {
+        if (error.message !== 'Time limit exceeded') throw error;
+    }
+
+    return bestMove;
 }
 
 function isCheckmate(game, color) {
@@ -121,12 +257,6 @@ exports.createGame = () => {
         winner: null,
         gameStatus: null,
 
-        /**
-         * Executes a move on the board.
-         */
-        /**
- * Executes a move on the board.
- */
         makeMove(move) {
             console.log('\nAttempting to make move:', move);
             const { from, to, promotion } = move;
@@ -166,8 +296,6 @@ exports.createGame = () => {
             // Store original piece for potential move reversal
             const originalPiece = this.board[toX][toY];
             console.log(`Moving ${piece} from [${fromX},${fromY}] to [${toX},${toY}]`);
-            
-            // Make the move
             this.board[toX][toY] = piece;
             this.board[fromX][fromY] = '.';
         
@@ -186,7 +314,6 @@ exports.createGame = () => {
         
                 const validPromotions = ['q', 'r', 'b', 'n'];
                 if (!validPromotions.includes(promotion.toLowerCase())) {
-                    // Revert the move
                     this.board[fromX][fromY] = piece;
                     this.board[toX][toY] = originalPiece;
                     throw new Error('Invalid promotion piece');
@@ -214,16 +341,14 @@ exports.createGame = () => {
                 promotion: promotion || null
             });
         
-            // Switch turns
             const oldTurn = this.turn;
             this.turn = this.turn === 'w' ? 'b' : 'w';
             console.log(`Turn switched to ${this.turn}`);
         
-            // Check if opponent is in check
+         
             if (isCheck(this, this.turn)) {
                 console.log(`${this.turn} is in check after move`);
                 
-                // Generate all possible moves for the opponent
                 const allPossibleMoves = generateMoves(this, this.turn);
                 console.log(`Found ${allPossibleMoves.length} possible moves to escape check`);
                 
@@ -237,8 +362,6 @@ exports.createGame = () => {
                     try {
                         const [fx, fy] = possibleMove.from;
                         const [tx, ty] = possibleMove.to;
-                        
-                        // Make move directly on copied board to avoid recursive makeMove
                         const movingPiece = gameCopy.board[fx][fy];
                         gameCopy.board[fx][fy] = '.';
                         gameCopy.board[tx][ty] = movingPiece;
@@ -306,6 +429,13 @@ exports.createGame = () => {
                 winner: null,
                 message: `${this.turn === 'w' ? 'White' : 'Black'} to move`
             };
+        },
+        makeAIMove() {
+            const move = getBestMove(this);
+            if (move) {
+                return this.makeMove(move);
+            }
+            return null;
         },
 
         getGameStatus() {
@@ -406,15 +536,15 @@ exports.makeMove = (boardState, move) => {
     }
 };
 
-/**
- * Executes the Minimax algorithm to determine the best move.
- * @param {Object} game - The current game instance.
- * @param {number} depth - The depth of the search tree.
- * @param {number} alpha - Alpha value for pruning.
- * @param {number} beta - Beta value for pruning.
- * @param {boolean} maximizingPlayer - True if maximizing player, else false.
- * @returns {Object} - The evaluation score and best move.
- */
+// /**
+//  * Executes the Minimax algorithm to determine the best move.
+//  * @param {Object} game - The current game instance.
+//  * @param {number} depth - The depth of the search tree.
+//  * @param {number} alpha - Alpha value for pruning.
+//  * @param {number} beta - Beta value for pruning.
+//  * @param {boolean} maximizingPlayer - True if maximizing player, else false.
+//  * @returns {Object} - The evaluation score and best move.
+//  */
 exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizingPlayer = true) => {
     console.log(`Running minimax at depth ${depth} for ${maximizingPlayer ? 'maximizing' : 'minimizing'} player.`);
     if (depth <= 0 || game.isGameOver()) {
@@ -737,9 +867,15 @@ function generateKingMoves(game, position) {
 // Export all necessary functions
 module.exports = {
     createGame: exports.createGame,
-    makeMove: exports.makeMove,
+    makeMove: (boardState, move) => {
+        const game = exports.createGame();
+        game.board = boardState;
+        game.turn = 'w';
+        return game.makeMove(move);
+    },
     runMinimax: exports.runMinimax,
-    // Internal functions that need to be exported
+    getBestMove,
+    evaluatePosition: evaluateBoard,
     generatePieceMoves,
     cloneGame,
     isCheck,

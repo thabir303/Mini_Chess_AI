@@ -10,35 +10,75 @@ const ChessBoard = () => {
     const [currentTurn, setCurrentTurn] = useState('w');
     const [possibleMoves, setPossibleMoves] = useState([]);
     const [gameResult, setGameResult] = useState(null);
+    const [gameMode, setGameMode] = useState('human');
     const [promotionModal, setPromotionModal] = useState({
         isVisible: false,
         move: null,
     });
 
-    const startNewGame = async () => {
+    const startNewGame = async (mode = 'human') => {
         try {
             setLoading(true);
-            const response = await axios.post('http://localhost:5000/api/game/start');
+            setGameMode(mode);
+            const response = await axios.post('http://localhost:5000/api/game/start', {
+                gameMode: mode
+            });
             setBoard(response.data.board);
-            setMessage('Game started! White\'s turn');
+            setMessage(response.data.message || 'Game started! White\'s turn');
             setLastMove(null);
             setSelectedPiece(null);
             setPossibleMoves([]);
-            setCurrentTurn('w');
+            setCurrentTurn(response.data.turn || 'w');
             setGameResult(null);
             setPromotionModal({ isVisible: false, move: null });
+
+            // If AI vs AI, start the game loop
+            if (mode === 'ai-vs-ai') {
+                await handleAIvsAI(response.data.board, 'w');
+            }
         } catch (error) {
             setMessage('Error starting game: ' + error.message);
         } finally {
             setLoading(false);
         }
     };
+    const handleAIvsAI = async (currentBoard, turn) => {
+        if (gameResult) return;
+        
+        try {
+            const response = await axios.post('http://localhost:5000/api/game/ai-move', {
+                board: currentBoard,
+                turn: turn,
+                gameMode: 'ai-vs-ai'
+            });
+
+            setBoard(response.data.board);
+            setLastMove(response.data.move);
+            setCurrentTurn(response.data.turn);
+            setMessage(response.data.message);
+
+            if (response.data.isGameOver) {
+                setGameResult(response.data.message);
+                return;
+            }
+
+            // Add a small delay between moves
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Continue the game with the next move
+            handleAIvsAI(response.data.board, response.data.turn);
+        } catch (error) {
+            setMessage('Error in AI vs AI game: ' + error.message);
+        }
+    };
 
     useEffect(() => {
-        startNewGame();
+        startNewGame('human');
     }, []);
 
     const getValidMoves = async (row, col) => {
+        if (gameMode !== 'human' && currentTurn === 'b') return;
+        
         try {
             const response = await axios.post('http://localhost:5000/api/game/valid-moves', {
                 board: board,
@@ -54,6 +94,8 @@ const ChessBoard = () => {
 
     const handleSquareClick = async (row, col) => {
         if (!board || loading || gameResult) return;
+        if (gameMode === 'ai-vs-ai') return; // Disable clicks in AI vs AI mode
+        if (gameMode === 'ai' && currentTurn === 'b') return; // Disable clicks during AI turn
 
         if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
             setSelectedPiece(null);
@@ -115,7 +157,7 @@ const ChessBoard = () => {
                 board: board,
                 move: movePayload,
                 turn: currentTurn,
-                gameMode: 'human' // or 'ai' for AI mode
+                gameMode: gameMode
             });
 
             setBoard(response.data.board);
@@ -123,17 +165,14 @@ const ChessBoard = () => {
             setSelectedPiece(null);
             setPossibleMoves([]);
 
-            // Handle game over conditions
             if (response.data.gameStatus && response.data.gameStatus.isOver) {
                 setGameResult(response.data.gameStatus.message);
                 setMessage(response.data.gameStatus.message);
                 return;
             }
 
-            // Update turn and message for normal gameplay
-            const nextTurn = currentTurn === 'w' ? 'b' : 'w';
-            setCurrentTurn(nextTurn);
-            setMessage(response.data.message || `${nextTurn === 'w' ? 'White' : 'Black'}'s turn.`);
+            setCurrentTurn(response.data.turn);
+            setMessage(response.data.message);
 
         } catch (error) {
             if (error.response?.data.requiresPromotion) {
@@ -203,7 +242,7 @@ const ChessBoard = () => {
                 <h1 className="text-4xl font-bold text-slate-800 mb-2">MiniChess</h1>
                 <div className="flex gap-4 mb-4 justify-center">
                     <button
-                        onClick={startNewGame}
+                        onClick={() => startNewGame('human')}
                         className="px-6 py-3 bg-blue-600 text-white rounded-lg 
                                  hover:bg-blue-700 transition-all duration-200 
                                  shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
@@ -211,7 +250,29 @@ const ChessBoard = () => {
                                  font-semibold"
                         disabled={loading}
                     >
-                        New Game
+                        Human vs Human
+                    </button>
+                    <button
+                        onClick={() => startNewGame('ai')}
+                        className="px-6 py-3 bg-green-600 text-white rounded-lg 
+                                 hover:bg-green-700 transition-all duration-200 
+                                 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                                 disabled:opacity-50 disabled:cursor-not-allowed
+                                 font-semibold"
+                        disabled={loading}
+                    >
+                        Human vs AI
+                    </button>
+                    <button
+                        onClick={() => startNewGame('ai-vs-ai')}
+                        className="px-6 py-3 bg-purple-600 text-white rounded-lg 
+                                 hover:bg-purple-700 transition-all duration-200 
+                                 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                                 disabled:opacity-50 disabled:cursor-not-allowed
+                                 font-semibold"
+                        disabled={loading}
+                    >
+                        AI vs AI
                     </button>
                 </div>
                 <div className={`text-lg mb-4 px-4 py-2 rounded-lg transition-colors duration-200
@@ -221,8 +282,12 @@ const ChessBoard = () => {
                         'bg-blue-100 text-blue-800'}`}>
                     {message}
                 </div>
+                <div className="text-sm text-gray-600">
+                    {gameMode === 'ai' && currentTurn === 'b' && !gameResult && 'AI is thinking...'}
+                    {gameMode === 'ai-vs-ai' && !gameResult && 'AI vs AI game in progress...'}
+                </div>
             </div>
-
+    
             <div className="relative">
                 {/* Turn indicator */}
                 <div className="absolute -left-32 top-1/2 transform -translate-y-1/2 
@@ -235,7 +300,19 @@ const ChessBoard = () => {
                         ${currentTurn === 'w' ? 'bg-white' : 'bg-gray-800'} 
                         border-2 border-gray-400 shadow-inner`}></div>
                 </div>
-
+    
+                {/* Game mode indicator */}
+                <div className="absolute -right-32 top-1/2 transform -translate-y-1/2 
+                               bg-white p-4 rounded-xl shadow-lg text-center w-24">
+                    <div className="text-sm font-semibold mb-2 text-gray-700">
+                        Mode:
+                    </div>
+                    <div className="text-xs font-medium">
+                        {gameMode === 'human' ? 'Human vs Human' : 
+                         gameMode === 'ai' ? 'Human vs AI' : 'AI vs AI'}
+                    </div>
+                </div>
+    
                 <div className="inline-block bg-slate-800 p-6 rounded-xl shadow-2xl">
                     {board.map((row, rowIndex) => (
                         <div key={rowIndex} className="flex">
@@ -243,13 +320,13 @@ const ChessBoard = () => {
                                 const isSelected = selectedPiece &&
                                     selectedPiece.row === rowIndex &&
                                     selectedPiece.col === colIndex;
-
+    
                                 const isLastMovePart = isLastMove(rowIndex, colIndex);
                                 const isPossible = isPossibleMove(rowIndex, colIndex);
-
+    
                                 const squareColor = (rowIndex + colIndex) % 2 === 0 ?
                                     'bg-[#F0D9B5]' : 'bg-[#B58863]';
-
+    
                                 return (
                                     <div
                                         key={colIndex}
@@ -260,7 +337,8 @@ const ChessBoard = () => {
                                             ${squareColor}
                                             ${isSelected ? 'ring-4 ring-yellow-400 ring-opacity-70 shadow-inner' : ''}
                                             ${isLastMovePart ? 'ring-2 ring-blue-400 ring-opacity-60' : ''}
-                                            hover:brightness-110
+                                            ${(gameMode === 'ai-vs-ai' || (gameMode === 'ai' && currentTurn === 'b')) ? 
+                                              'cursor-not-allowed' : 'hover:brightness-110'}
                                         `}
                                     >
                                         <span className={`
@@ -290,25 +368,36 @@ const ChessBoard = () => {
                     ))}
                 </div>
             </div>
-
+    
             {gameResult && (
                 <div className="mt-8 p-6 bg-gradient-to-r from-yellow-50 to-yellow-100 
                                rounded-xl border border-yellow-200 shadow-lg text-center
                                transform animate-fadeIn w-80">
                     <h2 className="text-2xl font-bold text-yellow-800 mb-3">Game Over!</h2>
                     <p className="text-yellow-900 mb-4">{gameResult}</p>
-                    <button 
-                        onClick={startNewGame}
-                        className="px-6 py-3 bg-yellow-600 text-white rounded-lg 
-                                 hover:bg-yellow-700 transition-all duration-200 
-                                 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
-                                 font-semibold"
-                    >
-                        Play Again
-                    </button>
+                    <div className="flex gap-4 justify-center">
+                        <button 
+                            onClick={() => startNewGame('human')}
+                            className="px-6 py-3 bg-yellow-600 text-white rounded-lg 
+                                     hover:bg-yellow-700 transition-all duration-200 
+                                     shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                                     font-semibold"
+                        >
+                            New Human Game
+                        </button>
+                        <button 
+                            onClick={() => startNewGame('ai')}
+                            className="px-6 py-3 bg-green-600 text-white rounded-lg 
+                                     hover:bg-green-700 transition-all duration-200 
+                                     shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                                     font-semibold"
+                        >
+                            Play vs AI
+                        </button>
+                    </div>
                 </div>
             )}
-
+    
             {promotionModal.isVisible && (
                 <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
                     <div className="bg-white p-6 rounded-lg shadow-lg">
@@ -317,19 +406,27 @@ const ChessBoard = () => {
                             <button 
                                 onClick={() => handlePromotionChoice('q')} 
                                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >Queen</button>
+                            >
+                                Queen {getPieceSymbol(currentTurn === 'w' ? 'Q' : 'q')}
+                            </button>
                             <button 
                                 onClick={() => handlePromotionChoice('r')} 
                                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >Rook</button>
+                            >
+                                Rook {getPieceSymbol(currentTurn === 'w' ? 'R' : 'r')}
+                            </button>
                             <button 
                                 onClick={() => handlePromotionChoice('b')} 
                                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >Bishop</button>
+                            >
+                                Bishop {getPieceSymbol(currentTurn === 'w' ? 'B' : 'b')}
+                            </button>
                             <button 
                                 onClick={() => handlePromotionChoice('n')} 
                                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                            >Knight</button>
+                            >
+                                Knight {getPieceSymbol(currentTurn === 'w' ? 'N' : 'n')}
+                            </button>
                         </div>
                     </div>
                 </div>
