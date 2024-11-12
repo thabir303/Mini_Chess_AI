@@ -4,7 +4,7 @@ const { evaluateBoard } = require('../utils/evaluation');
 
 const transpositionTable = {
     table: new Map(),
-    maxSize: 1000000,
+    maxSize: 500000,
     generateHash: (board, turn) => JSON.stringify(board) + turn,
     store: function(board, turn, depth, value, flag, bestMove) {
         const hash = this.generateHash(board, turn);
@@ -51,9 +51,6 @@ function getKingPosition(game, color) {
     return null;
 }
 
-/**
- * Determines if the specified player is in check.
- */
 function isCheck(game, color) {
     const kingPos = getKingPosition(game, color);
     if (!kingPos) return false;
@@ -67,11 +64,9 @@ function isCheck(game, color) {
     );
 }
 
-function quiescenceSearch(game, alpha, beta, depth, maxDepth = 4) {
+function quiescenceSearch(game, alpha, beta, depth, maxDepth = 3) {
     if (depth >= maxDepth) return evaluateBoard(game);
-
     const standPat = evaluateBoard(game);
-    
     if (standPat >= beta) return beta;
     if (alpha < standPat) alpha = standPat;
 
@@ -79,7 +74,7 @@ function quiescenceSearch(game, alpha, beta, depth, maxDepth = 4) {
         const [toX, toY] = move.to;
         return game.board[toX][toY] !== '.';
     });
-    
+
     for (const move of moves) {
         const gameCopy = cloneGame(game);
         try {
@@ -94,7 +89,7 @@ function quiescenceSearch(game, alpha, beta, depth, maxDepth = 4) {
     return alpha;
 }
 
-function alphaBeta(game, depth, alpha, beta, maximizingPlayer, timeLimit) {
+function alphaBeta(game, depth, alpha, beta, maximizingPlayer, timeLimit, useQuiescence) {
     if (Date.now() >= timeLimit) throw new Error('Time limit exceeded');
 
     const ttEntry = transpositionTable.lookup(game.board, game.turn);
@@ -106,8 +101,8 @@ function alphaBeta(game, depth, alpha, beta, maximizingPlayer, timeLimit) {
     }
 
     if (depth === 0 || game.isGameOver()) {
-        const score = quiescenceSearch(game, alpha, beta, 0);
-        return { score };
+        // return { score: evaluateBoard(game) }; // Simple evaluation for Human vs AI
+           return { score: useQuiescence ? quiescenceSearch(game, alpha, beta, 0) : evaluateBoard(game) };
     }
 
     const moves = generateMoves(game);
@@ -119,7 +114,7 @@ function alphaBeta(game, depth, alpha, beta, maximizingPlayer, timeLimit) {
         const gameCopy = cloneGame(game);
         try {
             gameCopy.makeMove(move);
-            const evaluation = alphaBeta(gameCopy, depth - 1, -beta, -alpha, !maximizingPlayer, timeLimit).score;
+            const evaluation = alphaBeta(gameCopy, depth - 1, -beta, -alpha, !maximizingPlayer, timeLimit, useQuiescence).score;
             const score = -evaluation;
 
             if (maximizingPlayer) {
@@ -154,94 +149,29 @@ function alphaBeta(game, depth, alpha, beta, maximizingPlayer, timeLimit) {
     transpositionTable.store(game.board, game.turn, depth, bestScore, flag, bestMove);
     return { score: bestScore, bestMove };
 }
-function getBestMove(game, timeLimit = 5000) {
+
+function getBestMove(game, gameMode = 'human', timeLimit = 4000) {
     const startTime = Date.now();
     const endTime = startTime + timeLimit;
     let bestMove = null;
-    let bestMoves = []; // Array to store top moves
-    let depth = 1;
-
-    // Track move history patterns
-    const movePatterns = {};
-    for (let i = 0; i < game.moveHistory.length; i++) {
-        const move = game.moveHistory[i];
-        const key = `${move.from[0]},${move.from[1]}-${move.to[0]},${move.to[1]}`;
-        movePatterns[key] = (movePatterns[key] || 0) + 1;
-    }
+    let depth = gameMode === 'ai-vs-ai' ? 8 : 3;
+    const useQuiescence = gameMode === 'ai-vs-ai';
 
     try {
         transpositionTable.clear();
-        while (Date.now() < endTime && depth <= 10) {
+        while (Date.now() < endTime && depth <= (gameMode === 'ai-vs-ai' ? 10 : 3)) {
             const result = alphaBeta(
                 game,
                 depth,
                 -Infinity,
                 Infinity,
                 true,
-                endTime
+                endTime,
+                useQuiescence
             );
 
             if (result.bestMove) {
-                // Store moves with scores close to the best move
-                const tolerance = 50; // Tolerance for considering moves as equally good
-                bestMoves = [];
-                const moves = generateMoves(game);
-                
-                for (const move of moves) {
-                    const gameCopy = cloneGame(game);
-                    try {
-                        gameCopy.makeMove(move);
-                        const evaluation = -alphaBeta(
-                            gameCopy,
-                            depth - 1,
-                            -Infinity,
-                            Infinity,
-                            false,
-                            endTime
-                        ).score;
-
-                       // Apply penalties for repetitive moves
-                        const moveKey = `${move.from[0]},${move.from[1]}-${move.to[0]},${move.to[1]}`;
-                        const repetitionCount = movePatterns[moveKey] || 0;
-                        evaluation -= repetitionCount * 100;  // Heavy penalty for repeated moves
-
-                        // Apply penalty for using recently moved pieces
-                        const piece = game.board[move.from[0]][move.from[1]];
-                        const recentMoves = game.moveHistory.slice(-6);
-                        const pieceRecentMoves = recentMoves.filter(m => 
-                            game.board[m.from[0]][m.from[1]] === piece
-                        ).length;
-                        evaluation -= pieceRecentMoves * 50;  // Penalty for using same piece repeatedly
-
-                        // Store move with its adjusted evaluation
-                        bestMoves.push({ move, evaluation });
-                    } catch {
-                        continue;
-                    }
-                }
-                // Sort moves by evaluation
-                bestMoves.sort((a, b) => b.evaluation - a.evaluation);
-
-                // Take top moves within a reasonable threshold
-                const threshold = bestMoves[0]?.evaluation - 200;  // Allow moves within 200 points of best
-                bestMoves = bestMoves.filter(m => m.evaluation >= threshold);
-  
-                // Randomly select from the best moves
-                if (bestMoves.length > 0) {
-                    const weights = bestMoves.map((m, index) => 1 / (index + 1));
-                    const totalWeight = weights.reduce((a, b) => a + b, 0);
-                    let random = Math.random() * totalWeight;
-                    for (let i = 0; i < weights.length; i++) {
-                        random -= weights[i];
-                        if (random <= 0) {
-                            bestMove = bestMoves[i].move;
-                            break;
-                        }
-                    }
-                    
-                } 
-               console.log(`Depth ${depth} completed. Found ${bestMoves.length} good moves.`); 
-                
+                bestMove = result.bestMove;
             }
             depth++;
         }
@@ -255,40 +185,6 @@ function getBestMove(game, timeLimit = 5000) {
             bestMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
         }
     }
-
-    // // If we have multiple good moves, avoid repeating the last move if possible
-    // if (bestMoves.length > 1 && game.moveHistory.length > 0) {
-    //     const lastMove = game.moveHistory[game.moveHistory.length - 1];
-    //     bestMoves = bestMoves.filter(move => 
-    //         !(move.from[0] === lastMove.to[0] && 
-    //           move.from[1] === lastMove.to[1] && 
-    //           move.to[0] === lastMove.from[0] && 
-    //           move.to[1] === lastMove.from[1])
-    //     );
-    // }
-
-    // // Add diversity bonus to moves using different pieces
-    // if (bestMoves.length > 0) {
-    //     const lastFewMoves = game.moveHistory.slice(-4);
-    //     const recentlyMovedPieces = new Set(
-    //         lastFewMoves.map(m => game.board[m.to[0]][m.to[1]])
-    //     );
-
-    //     bestMoves = bestMoves.sort((a, b) => {
-    //         const pieceA = game.board[a.from[0]][a.from[1]];
-    //         const pieceB = game.board[b.from[0]][b.from[1]];
-            
-    //         const scoreA = recentlyMovedPieces.has(pieceA) ? 0 : 1;
-    //         const scoreB = recentlyMovedPieces.has(pieceB) ? 0 : 1;
-            
-    //         return scoreB - scoreA;
-    //     });
-
-    //     // Select one of the top moves with some randomness
-    //     const topMoves = bestMoves.slice(0, Math.min(3, bestMoves.length));
-    //     bestMove = topMoves[Math.floor(Math.random() * topMoves.length)];
-    // }
-
     return bestMove;
 }
 
@@ -313,7 +209,7 @@ function isCheckmate(game, color) {
             gameCopy.makeMove(move);
             if (!isCheck(gameCopy, color)) {
                 console.log(`Not in checkmate - found escape move:`, move);
-                return false; // Found a move that escapes check
+                return false; 
             }
             console.log(`Move ${JSON.stringify(move)} doesn't escape check`);
         } catch (error) {
@@ -347,9 +243,6 @@ function isInsufficientMaterial(game) {
     return false;
 }
 
-/**
- * Creates a new game instance with the initial board setup.
- */
 exports.createGame = () => {
     return {
         board: [
@@ -619,12 +512,6 @@ exports.createGame = () => {
 };
 
 
-/**
- * Processes a move based on the current board state and the move object.
- * @param {Array} boardState - The current board state as a 6x5 array.
- * @param {Object} move - The move to execute.
- * @returns {Object} - The updated board state and game status.
- */
 exports.makeMove = (boardState, move) => {
     try {
         console.log('Making move with board state:', boardState, 'and move:', move);
@@ -644,15 +531,7 @@ exports.makeMove = (boardState, move) => {
     }
 };
 
-// /**
-//  * Executes the Minimax algorithm to determine the best move.
-//  * @param {Object} game - The current game instance.
-//  * @param {number} depth - The depth of the search tree.
-//  * @param {number} alpha - Alpha value for pruning.
-//  * @param {number} beta - Beta value for pruning.
-//  * @param {boolean} maximizingPlayer - True if maximizing player, else false.
-//  * @returns {Object} - The evaluation score and best move.
-//  */
+
 exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizingPlayer = true) => {
     console.log(`Running minimax at depth ${depth} for ${maximizingPlayer ? 'maximizing' : 'minimizing'} player.`);
     if (depth <= 0 || game.isGameOver()) {
@@ -701,11 +580,7 @@ exports.runMinimax = (game, depth, alpha = -Infinity, beta = Infinity, maximizin
     }
 };
 
-/**
- * Evaluates the current board position.
- * @param {Object} game - The current game instance.
- * @returns {number} - The evaluation score.
- */
+
 function evaluatePosition(game) {
     let score = evaluateBoard(game);
 
@@ -777,12 +652,7 @@ function getAllPieces(game) {
     }
     return pieces;
 }
-/**
- * Generates all possible moves for the specified player.
- * @param {Object} game - The current game instance.
- * @param {string} color - 'w' for White or 'b' for Black.
- * @returns {Array} - Array of move objects.
- */
+
 function generateMoves(game, color = game.turn) {
     console.log('Generating moves for the current game state.');
     const moves = [];
@@ -798,12 +668,7 @@ function generateMoves(game, color = game.turn) {
     return moves;
 }
 
-/**
- * Generates all possible moves for a specific piece.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the piece.
- * @returns {Array} - Array of move objects.
- */
+
 function generatePieceMoves(game, position) {
     const [x, y] = position;
     const piece = game.board[x][y].toLowerCase();
@@ -833,12 +698,6 @@ function generatePieceMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible pawn moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the pawn.
- * @returns {Array} - Array of move objects.
- */
 function generatePawnMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -885,12 +744,7 @@ function generatePawnMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible knight moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the knight.
- * @returns {Array} - Array of move objects.
- */
+
 function generateKnightMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -914,12 +768,6 @@ function generateKnightMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible queen moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the queen.
- * @returns {Array} - Array of move objects.
- */
 function generateQueenMoves(game, position) {
     console.log('Generating queen moves.');
     const rookMoves = generateRookMoves(game, position);
@@ -928,12 +776,7 @@ function generateQueenMoves(game, position) {
     return rookMoves.concat(bishopMoves);
 }
 
-/**
- * Generates all possible rook moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the rook.
- * @returns {Array} - Array of move objects.
- */
+
 function generateRookMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -963,12 +806,7 @@ function generateRookMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible bishop moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the bishop.
- * @returns {Array} - Array of move objects.
- */
+
 function generateBishopMoves(game, position) {
     const [x, y] = position;
     const moves = [];
@@ -998,12 +836,7 @@ function generateBishopMoves(game, position) {
     return moves;
 }
 
-/**
- * Generates all possible king moves from a given position.
- * @param {Object} game - The current game instance.
- * @param {Array} position - [x, y] position of the king.
- * @returns {Array} - Array of move objects.
- */
+
 function generateKingMoves(game, position) {
     const [x, y] = position;
     const moves = [];

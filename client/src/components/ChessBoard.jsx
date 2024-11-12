@@ -17,42 +17,33 @@ const ChessBoard = () => {
     });
 
     const startNewGame = async (mode = 'human') => {
+        setLoading(true);
+        setGameMode(mode);
+        setGameResult(null);
         try {
-            setLoading(true);
-            setGameMode(mode);
-            setGameResult(null);
-            const response = await axios.post('http://localhost:5000/api/game/start', {
-                gameMode: mode
-            });
-            setBoard(response.data.board);
-            setMessage(response.data.message || 'Game started! White\'s turn');
+            const response = await axios.post('http://localhost:5000/api/game/start', { gameMode: mode });
+            const { board, turn, message } = response.data;
+            setBoard(board);
+            setCurrentTurn(turn || 'w');
+            setMessage(message || "Game started! White's turn");
             setLastMove(null);
             setSelectedPiece(null);
             setPossibleMoves([]);
-            setCurrentTurn(response.data.turn || 'w');
-            // setGameResult(null);
             setPromotionModal({ isVisible: false, move: null });
 
-            // If AI vs AI, start the game loop
-            if (mode === 'ai-vs-ai') {
-                setTimeout(() => {
-                    handleAIvsAI(response.data.board, 'w');
-                }, 1000);
-            }
-            setLoading(false);
+            if (mode === 'ai-vs-ai') handleAIvsAI(board, 'w');
         } catch (error) {
             setMessage('Error starting game: ' + error.message);
+        } finally {
             setLoading(false);
-        } 
-        // finally {
-        //     setLoading(false);
-        // }
+        }
     };
+
     const handleAIvsAI = async (currentBoard, turn) => {
-        if (!currentBoard || loading || gameResult) return;
-        
+        if (!currentBoard || gameResult) return;
+
+        setLoading(true);
         try {
-            setLoading(true);
             const response = await axios.post('http://localhost:5000/api/game/ai-move', {
                 board: currentBoard,
                 turn: turn,
@@ -60,49 +51,29 @@ const ChessBoard = () => {
             });
 
             if (response.data) {
-            setBoard(response.data.board);
-            setLastMove(response.data.move);
-            setCurrentTurn(response.data.turn);
-            setMessage(response.data.message);
+                const { board, move, turn, message, gameStatus } = response.data;
+                setBoard(board);
+                setLastMove(move);
+                setCurrentTurn(turn);
+                setMessage(message);
 
-            if (response.data.gameStatus && response.data.gameStatus.isOver) {
-                setGameResult(response.data.gameStatus.message);
-                setLoading(false);
-                return;
+                if (gameStatus && gameStatus.isOver) {
+                    setGameResult(gameStatus.message);
+                } else {
+                    handleAIvsAI(board, turn); // Trigger next AI move
+                }
             }
-
-            // Add a small delay between moves
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            if (!response.data.gameStatus?.isOver) {
-                setLoading(false);
-                handleAIvsAI(response.data.board, response.data.turn);
-            }
-        }
-            // Continue the game with the next move
-            // handleAIvsAI(response.data.board, response.data.turn);
         } catch (error) {
-            console.error('Error in AI vs AI game:', error);
             setMessage('Error in AI vs AI game: ' + error.message);
+        } finally {
             setLoading(false);
-         }
+        }
     };
-
-    useEffect(() => {
-        let mounted = true;
-        
-        const cleanup = () => {
-            mounted = false;
-            
-            setLoading(false);
-        };
-    
-        return cleanup;
-    }, []);
 
     useEffect(() => {
         startNewGame('human');
     }, []);
+    
 
     const getValidMoves = async (row, col) => {
         if (gameMode !== 'human' && currentTurn === 'b') return;
@@ -115,16 +86,15 @@ const ChessBoard = () => {
             });
             setPossibleMoves(response.data.validMoves);
         } catch (error) {
-            console.error('Error getting valid moves:', error);
             setPossibleMoves([]);
+            console.error('Error getting valid moves:', error);
         }
     };
 
     const handleSquareClick = async (row, col) => {
-        if (!board || loading || gameResult) return;
-        if (gameMode === 'ai-vs-ai') return; // Disable clicks in AI vs AI mode
-        if (gameMode === 'ai' && currentTurn === 'b') return; // Disable clicks during AI turn
+        if (!board || loading || gameResult || gameMode === 'ai-vs-ai' || (gameMode === 'ai' && currentTurn === 'b')) return;
 
+        const piece = board[row][col];
         if (selectedPiece && selectedPiece.row === row && selectedPiece.col === col) {
             setSelectedPiece(null);
             setPossibleMoves([]);
@@ -133,16 +103,14 @@ const ChessBoard = () => {
         }
 
         if (!selectedPiece) {
-            const piece = board[row][col];
             if (piece !== '.' && (
                 (currentTurn === 'w' && piece === piece.toUpperCase()) ||
                 (currentTurn === 'b' && piece === piece.toLowerCase())
             )) {
                 setSelectedPiece({ row, col });
                 await getValidMoves(row, col);
-                setMessage(`Selected ${piece === piece.toUpperCase() ? 'white' : 'black'} ${getPieceName(piece)}. Choose a destination.`);
+                setMessage(`Selected ${getPieceName(piece)}. Choose a destination.`);
             } else {
-                setPossibleMoves([]);
                 setMessage(`Invalid selection. It is ${currentTurn === 'w' ? 'White' : 'Black'}'s turn.`);
             }
         } else {
@@ -151,21 +119,9 @@ const ChessBoard = () => {
                 return;
             }
 
-            const move = {
-                from: [selectedPiece.row, selectedPiece.col],
-                to: [row, col]
-            };
-
-            const piece = board[selectedPiece.row][selectedPiece.col];
-            const isPawn = piece.toLowerCase() === 'p';
-            const promotionRow = currentTurn === 'w' ? 0 : 5;
-            const isPromotionMove = isPawn && row === promotionRow;
-
-            if (isPromotionMove) {
-                setPromotionModal({
-                    isVisible: true,
-                    move: move
-                });
+            const move = { from: [selectedPiece.row, selectedPiece.col], to: [row, col] };
+            if (piece.toLowerCase() === 'p' && (row === 0 || row === 5)) {
+                setPromotionModal({ isVisible: true, move });
                 return;
             }
 
@@ -174,12 +130,10 @@ const ChessBoard = () => {
     };
 
     const sendMove = async (move, promotion = null) => {
+        setLoading(true);
         try {
-            setLoading(true);
             const movePayload = { ...move };
-            if (promotion) {
-                movePayload.promotion = promotion;
-            }
+            if (promotion) movePayload.promotion = promotion;
 
             const response = await axios.post('http://localhost:5000/api/game/move', {
                 board: board,
@@ -192,25 +146,17 @@ const ChessBoard = () => {
             setLastMove(response.data.lastMove);
             setSelectedPiece(null);
             setPossibleMoves([]);
-
-            if (response.data.gameStatus && response.data.gameStatus.isOver) {
-                setGameResult(response.data.gameStatus.message);
-                setMessage(response.data.gameStatus.message);
-                return;
-            }
-
-            setCurrentTurn(response.data.turn);
             setMessage(response.data.message);
 
-        } catch (error) {
-            if (error.response?.data.requiresPromotion) {
-                const pendingMove = error.response.data.move;
-                setPromotionModal({
-                    isVisible: true,
-                    move: pendingMove
-                });
+            if (response.data.gameStatus?.isOver) {
+                setGameResult(response.data.gameStatus.message);
             } else {
-                setMessage('Invalid move: ' + (error.response?.data?.error || error.message));
+                setCurrentTurn(response.data.turn);
+            }
+        } catch (error) {
+            setMessage('Invalid move: ' + (error.response?.data?.error || error.message));
+            if (error.response?.data.requiresPromotion) {
+                setPromotionModal({ isVisible: true, move: error.response.data.move });
             }
         } finally {
             setLoading(false);
