@@ -1,10 +1,12 @@
 // /Server/routes/gameRoutes.js
 
 const express = require('express');
-const { playMove, startGame, getValidMoves } = require('../controllers/gameController');
-
 const router = express.Router();
-router.post('/start', startGame);
-router.post('/move', playMove);
-router.post('/valid-moves', getValidMoves);
+const gameController = require('../controllers/gameController');
+
+router.post('/start', gameController.startGame);
+router.post('/move', gameController.playMove);
+router.post('/valid-moves', gameController.getValidMoves);
+router.post('/ai-move', gameController.getAIMove);
+
 module.exports = router;

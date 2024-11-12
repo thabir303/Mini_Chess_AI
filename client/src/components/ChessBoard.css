@@ -1,4 +1,12 @@
 /* /Client/src/components/ChessBoard.css */
+:root {
+    --light-square: #F0D9B5;
+    --dark-square: #B58863;
+    --selected-color: rgba(255, 222, 89, 0.9);
+    --possible-move-color: rgba(106, 191, 143, 0.8);
+    --last-move-color: rgba(100, 120, 220, 0.2);
+    --hover-color: rgba(0, 0, 0, 0.1);
+}
 
 .promotion-modal {
     position: fixed;
