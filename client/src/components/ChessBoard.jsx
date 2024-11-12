@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { FaChess, FaRobot, FaUserFriends } from 'react-icons/fa';
-import ChessLogo from './Chess1.png'
-import Profile from './profile.jpg'
+import ChessLogo from './Chess1.png';
+import Profile from './profile.jpg';
 
 const ChessBoard = () => {
+    // State declarations
     const [board, setBoard] = useState(null);
-    //const [capturedPieces, setCapturedPieces] = useState({ white: [], black: [] }); // New state for captured pieces other states...
     const [selectedPiece, setSelectedPiece] = useState(null);
     const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(false);
@@ -22,7 +22,7 @@ const ChessBoard = () => {
     const [capturedWhitePieces, setCapturedWhitePieces] = useState([]); // Captured pieces for white
     const [capturedBlackPieces, setCapturedBlackPieces] = useState([]); // Captured pieces for black
 
-
+    // Function to start a new game
     const startNewGame = async (mode = 'human') => {
         try {
             setLoading(true);
@@ -39,7 +39,6 @@ const ChessBoard = () => {
             setSelectedPiece(null);
             setPossibleMoves([]);
             setCurrentTurn(response.data.turn || 'w');
-            // setGameResult(null);
             setPromotionModal({ isVisible: false, move: null });
 
             // If AI vs AI, start the game loop
@@ -53,10 +52,9 @@ const ChessBoard = () => {
             setMessage('Error starting game: ' + error.message);
             setLoading(false);
         }
-        // finally {
-        //     setLoading(false);
-        // }
     };
+
+    // Function to handle AI vs AI gameplay
     const handleAIvsAI = async (currentBoard, turn) => {
         if (!currentBoard || loading || gameResult) return;
 
@@ -79,7 +77,6 @@ const ChessBoard = () => {
                     updateCapturedPieces(response.data.capturedPiece);
                 }
 
-
                 // Handle game end condition
                 if (response.data.gameStatus && response.data.gameStatus.isOver) {
                     setGameResult(response.data.gameStatus.message);
@@ -95,8 +92,6 @@ const ChessBoard = () => {
                     handleAIvsAI(response.data.board, response.data.turn);
                 }
             }
-            // Continue the game with the next move
-            // handleAIvsAI(response.data.board, response.data.turn);
         } catch (error) {
             console.error('Error in AI vs AI game:', error);
             setMessage('Error in AI vs AI game: ' + error.message);
@@ -104,22 +99,24 @@ const ChessBoard = () => {
         }
     };
 
+    // Cleanup effect
     useEffect(() => {
         let mounted = true;
 
         const cleanup = () => {
             mounted = false;
-
             setLoading(false);
         };
 
         return cleanup;
     }, []);
 
+    // Start a new game on component mount
     useEffect(() => {
         startNewGame('human');
     }, []);
 
+    // Function to get valid moves for a selected piece
     const getValidMoves = async (row, col) => {
         if (gameMode !== 'human' && currentTurn === 'b') return;
 
@@ -136,6 +133,7 @@ const ChessBoard = () => {
         }
     };
 
+    // Function to handle square clicks
     const handleSquareClick = async (row, col) => {
         if (!board || loading || gameResult) return;
         if (gameMode === 'ai-vs-ai') return; // Disable clicks in AI vs AI mode
@@ -171,7 +169,6 @@ const ChessBoard = () => {
                 from: [selectedPiece.row, selectedPiece.col],
                 to: [row, col]
             };
-
             const piece = board[selectedPiece.row][selectedPiece.col];
             const isPawn = piece.toLowerCase() === 'p';
             const promotionRow = currentTurn === 'w' ? 0 : 5;
@@ -198,6 +195,7 @@ const ChessBoard = () => {
         }
     };
 
+    // Function to send a move to the backend
     const sendMove = async (move, promotion = null) => {
         try {
             setLoading(true);
@@ -213,16 +211,7 @@ const ChessBoard = () => {
                 gameMode: gameMode
             });
 
-            // // Check for a captured piece in the response and update the state accordingly
-            // if (response.data.capturedPiece) {
-            //     const piece = response.data.capturedPiece;
-            //     if (piece === piece.toUpperCase()) {
-            //         setCapturedBlackPieces(prev => [...prev, piece]); // Update Black's captured pieces
-            //     } else {
-            //         setCapturedWhitePieces(prev => [...prev, piece]); // Update White's captured pieces
-            //     }
-            // }
-
+            // Update captured pieces if any
             if (response.data.capturedPiece) {
                 updateCapturedPieces(response.data.capturedPiece);
             }
@@ -256,11 +245,13 @@ const ChessBoard = () => {
         }
     };
 
+    // Function to handle promotion choice
     const handlePromotionChoice = (promotion) => {
         sendMove(promotionModal.move, promotion);
         setPromotionModal({ isVisible: false, move: null });
     };
 
+    // Function to check if a square was part of the last move
     const isLastMove = (row, col) => {
         if (!lastMove) return false;
         return (
@@ -269,10 +260,12 @@ const ChessBoard = () => {
         );
     };
 
+    // Function to check if a move is possible
     const isPossibleMove = (row, col) => {
         return possibleMoves.some(move => move.to[0] === row && move.to[1] === col);
     };
 
+    // Function to get the name of a piece
     const getPieceName = (piece) => {
         const pieceNames = {
             'p': 'pawn', 'P': 'pawn',
@@ -285,6 +278,7 @@ const ChessBoard = () => {
         return pieceNames[piece] || piece;
     };
 
+    // Function to get the symbol of a piece
     const getPieceSymbol = (piece) => {
         const symbols = {
             'p': '♟', 'P': '♙',
@@ -297,14 +291,18 @@ const ChessBoard = () => {
         return symbols[piece] || '';
     };
 
-    if (!board) return (
-        <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-100 to-slate-200">
-            <div className="text-3xl font-bold text-slate-800 animate-pulse">Loading...</div>
-        </div>
-    );
+    // Loading state
+    if (!board) {
+        return (
+            <div className="flex items-center justify-center h-screen bg-gradient-to-br from-slate-100 to-slate-200">
+                <div className="text-3xl font-bold text-slate-800 animate-pulse">Loading...</div>
+            </div>
+        );
+    }
 
     return (
-        <div className="flex flex-col items-center min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-8"
+        <div
+            className="flex flex-col items-center min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-8"
             style={{
                 backgroundImage: "url('/chess-background.jpg')",
                 backgroundSize: "cover",
@@ -314,7 +312,6 @@ const ChessBoard = () => {
                 WebkitBackdropFilter: "blur(80px)"
             }}
         >
-
             {/* Chess Logo */}
             <img
                 src={ChessLogo}
@@ -325,6 +322,7 @@ const ChessBoard = () => {
                 }}
             />
 
+            {/* Header Section */}
             <div className="mb-8 text-center">
                 <h1 className="text-4xl font-bold mb-2">
                     {Array.from("ChessAttack").map((letter, index) => (
@@ -341,25 +339,26 @@ const ChessBoard = () => {
                     ))}
                 </h1>
 
+                {/* Keyframes for color change animation */}
                 <style jsx>{`
-                 @keyframes color-change {
-                      0%, 100% {
-                      color: #ffffff; /* White */
-                         }
-                       80% {
-                     color: #0e86d4; 
-                     }
-                       }
+                    @keyframes color-change {
+                        0%, 100% {
+                            color: #ffffff; /* White */
+                        }
+                        80% {
+                            color: #0e86d4; 
+                        }
+                    }
                 `}</style>
 
-
+                {/* Game Mode Buttons */}
                 <div className="flex gap-4 mb-4 justify-center">
                     <button
                         onClick={() => startNewGame('human')}
                         className="flex items-center gap-2 px-6 py-3 bg-gray-700 text-white rounded-lg 
-                   hover:bg-gray-600 transition-all duration-200 
-                   shadow-md hover:shadow-lg transform hover:-translate-y-0.5
-                   font-semibold"
+                                   hover:bg-gray-600 transition-all duration-200 
+                                   shadow-md hover:shadow-lg transform hover:-translate-y-0.5
+                                   font-semibold"
                         disabled={loading}
                     >
                         <FaUserFriends size={20} />
@@ -368,9 +367,9 @@ const ChessBoard = () => {
                     <button
                         onClick={() => startNewGame('ai')}
                         className="flex items-center gap-2 px-6 py-3 bg-gray-700 text-white rounded-lg 
-                   hover:bg-gray-600 transition-all duration-200 
-                   shadow-md hover:shadow-lg transform hover:-translate-y-0.5
-                   font-semibold"
+                                   hover:bg-gray-600 transition-all duration-200 
+                                   shadow-md hover:shadow-lg transform hover:-translate-y-0.5
+                                   font-semibold"
                         disabled={loading}
                     >
                         <FaRobot size={20} />
@@ -379,219 +378,232 @@ const ChessBoard = () => {
                     <button
                         onClick={() => startNewGame('ai-vs-ai')}
                         className="flex items-center gap-2 px-6 py-3 bg-gray-700 text-white rounded-lg 
-                   hover:bg-gray-600 transition-all duration-200 
-                   shadow-md hover:shadow-lg transform hover:-translate-y-0.5
-                   font-semibold"
+                                   hover:bg-gray-600 transition-all duration-200 
+                                   shadow-md hover:shadow-lg transform hover:-translate-y-0.5
+                                   font-semibold"
                         disabled={loading}
                     >
                         <FaRobot size={20} />
                         AI vs AI
                     </button>
                 </div>
-                <div className={`text-lg mb-4 px-4 py-2 rounded-lg transition-colors duration-200
-                    ${gameResult ? 'bg-green-100 text-green-800 font-bold' :
-                        message.includes('Error') || message.includes('Invalid') ?
-                            'bg-red-100 text-red-800' :
-                            'bg-blue-100 text-blue-800'}`}>
+
+                {/* Message Display */}
+                <div
+                    className={`text-lg mb-4 px-4 py-2 rounded-lg transition-colors duration-200
+                                ${gameResult ? 'bg-green-100 text-green-800 font-bold' :
+                            message.includes('Error') || message.includes('Invalid') ?
+                                'bg-red-100 text-red-800' :
+                                'bg-blue-100 text-blue-800'}`}
+                >
                     {message}
                 </div>
+
+                {/* Additional Information */}
                 <div className="text-sm text-gray-600">
                     {gameMode === 'ai' && currentTurn === 'b' && !gameResult && 'AI is thinking...'}
                     {gameMode === 'ai-vs-ai' && !gameResult && 'AI vs AI game in progress...'}
                 </div>
             </div>
 
+            {/* Main Chess Area */}
             <div className="relative">
+                {/* Wrapper div to shift everything slightly to the right */}
+                <div className="flex items-center justify-center min-h-screen"> {/* Added ml-10 to shift content to the right */}
 
-                <div className="flex items-start min-h-screen p-8 bg-gradient-to-br from-slate-100 to-slate-200"
-                    style={{
-                        backgroundImage: "url('/Chess.png')",
-                        backgroundSize: "cover",
-                        backgroundPosition: "center",
-                        backgroundRepeat: "no-repeat",
-                        backdropFilter: "blur(8px)", // Adjust blur intensity here
-                        WebkitBackdropFilter: "blur(80px)"
-                    }}
-                >
-                    {/* Turn indicator */}
-                    {/* <div className="absolute -left-40 top-1/4 transform -translate-y-1/2  bg-white p-4 rounded-xl shadow-lg text-center w-32">
-                        <div className={`text-lg font-semibold mb-2 
-                        ${currentTurn === 'w' ? 'text-slate-800' : 'text-slate-700'}`}>
-                            {currentTurn === 'w' ? 'White' : 'Black'}
-                        </div>
-                        <div className={`w-8 h-8 rounded-full mx-auto 
-                        ${currentTurn === 'w' ? 'bg-white' : 'bg-gray-800'} 
-                        border-2 border-gray-400 shadow-inner`}></div>
-                        <div className="mt-2 text-sm text-gray-600">to move</div>
-                    </div> */}
-
-                    {/* Turn indicator with player picture */}
-                    <div className="absolute -left-40 top-1/4 transform -translate-y-1/2 bg-white p-4 rounded-xl shadow-lg text-center w-32">
-                        {/* Player picture div */}
-                        <div className="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden shadow-lg">
-                            <img
-                                src={Profile}
-                                alt="Profile picture"
-
-                                className="w-full h-full object-cover"
-                            />
-                        </div>
-
-                        {/* Turn indicator content */}
-                        <div className={`text-lg font-semibold mb-2 ${currentTurn === 'w' ? 'text-slate-800' : 'text-slate-700'}`}>
-                            {currentTurn === 'w' ? 'White' : 'Black'}
-                        </div>
-                        <div className={`w-8 h-8 rounded-full mx-auto ${currentTurn === 'w' ? 'bg-white' : 'bg-gray-800'} border-2 border-gray-400 shadow-inner`}></div>
-                        <div className="mt-2 text-sm text-gray-600">to move</div>
-                    </div>
-
-
-
-                    {/* Chess Board Container */}
-                    <div className="inline-block bg-slate-800 p-8 rounded-xl shadow-2xl mr-8">
-                        <div className="relative">
-                            {/* Rank numbers */}
-                            <div className="absolute right-full pr-3 top-0 bottom-0 flex flex-col justify-around text-gray-300 text-sm font-medium">
-                                {[0, 1, 2, 3, 4, 5].map(i => (
-                                    <div key={i} className="h-16 flex items-center">{6 - i}</div>
-                                ))}
+                    {/* Main container with background */}
+                    <div
+                        className="flex items-start min-h-screen p-8 bg-gradient-to-br from-slate-100 to-slate-200 justify-end"
+                        style={{
+                            backgroundImage: "url('/Chess.png')",
+                            backgroundSize: "cover",
+                            backgroundPosition: "center",
+                            backgroundRepeat: "no-repeat",
+                            backdropFilter: "blur(8px)", // Adjust blur intensity here
+                            WebkitBackdropFilter: "blur(8px)"
+                        }}
+                    >
+                        {/* Turn Indicator with Player Picture */}
+                        <div
+                            className="absolute -left-52 top-1/4 transform -translate-y-1/2 bg-white p-4 rounded-xl shadow-lg text-center w-32"
+                        > {/* Adjusted from -left-56 to -left-52 to move slightly right */}
+                            {/* Player Picture */}
+                            <div className="w-16 h-16 mx-auto mb-2 rounded-full overflow-hidden shadow-lg">
+                                <img
+                                    src={Profile}
+                                    alt="Profile picture"
+                                    className="w-full h-full object-cover"
+                                />
                             </div>
 
-                            {/* File letters */}
-                            <div className="absolute left-0 right-0 bottom-full pb-3 flex justify-around text-gray-300 text-sm font-medium">
-                                {['a', 'b', 'c', 'd', 'e'].map(letter => (
-                                    <div key={letter} className="w-16 text-center">{letter}</div>
-                                ))}
+                            {/* Turn Indicator Content */}
+                            <div
+                                className={`text-lg font-semibold mb-2 ${currentTurn === 'w' ? 'text-slate-800' : 'text-slate-700'
+                                    }`}
+                            >
+                                {currentTurn === 'w' ? 'White' : 'Black'}
                             </div>
+                            <div
+                                className={`w-8 h-8 rounded-full mx-auto ${currentTurn === 'w' ? 'bg-white' : 'bg-gray-800'
+                                    } border-2 border-gray-400 shadow-inner`}
+                            ></div>
+                            <div className="mt-2 text-sm text-gray-600">to move</div>
+                        </div>
 
-                            {/* Board squares */}
+                        {/* Chess Board Container */}
+                        <div
+                            className="inline-block bg-slate-800 p-8 rounded-xl shadow-2xl ml-8 mr-12"
+                        > {/* Increased ml from ml-auto to ml-8 and mr-8 to mr-12 for subtle right shift */}
                             <div className="relative">
-                                {board.map((row, rowIndex) => (
-                                    <div key={rowIndex} className="flex">
-                                        {row.map((piece, colIndex) => {
-                                            const isSelected = selectedPiece &&
-                                                selectedPiece.row === rowIndex &&
-                                                selectedPiece.col === colIndex;
+                                {/* Rank Numbers */}
+                                <div className="absolute right-full pr-3 top-0 bottom-0 flex flex-col justify-around text-gray-300 text-sm font-medium">
+                                    {[0, 1, 2, 3, 4, 5].map(i => (
+                                        <div key={i} className="h-16 flex items-center">{6 - i}</div>
+                                    ))}
+                                </div>
 
-                                            const isLastMovePart = isLastMove(rowIndex, colIndex);
-                                            const isPossible = isPossibleMove(rowIndex, colIndex);
-                                            const isCheck = piece.toLowerCase() === 'k' &&
-                                                ((currentTurn === 'w' && piece === 'K') ||
-                                                    (currentTurn === 'b' && piece === 'k')) &&
-                                                message.includes('check');
+                                {/* File Letters */}
+                                <div className="absolute left-0 right-0 bottom-full pb-3 flex justify-around text-gray-300 text-sm font-medium">
+                                    {['a', 'b', 'c', 'd', 'e'].map(letter => (
+                                        <div key={letter} className="w-16 text-center">{letter}</div>
+                                    ))}
+                                </div>
 
-                                            const squareColor = (rowIndex + colIndex) % 2 === 0
-                                                ? 'bg-[#F0D9B5]'
-                                                : 'bg-[#B58863]';
+                                {/* Board Squares */}
+                                <div className="relative">
+                                    {board.map((row, rowIndex) => (
+                                        <div key={rowIndex} className="flex">
+                                            {row.map((piece, colIndex) => {
+                                                const isSelected = selectedPiece &&
+                                                    selectedPiece.row === rowIndex &&
+                                                    selectedPiece.col === colIndex;
 
-                                            return (
-                                                <div
-                                                    key={colIndex}
-                                                    onClick={() => handleSquareClick(rowIndex, colIndex)}
-                                                    className={`
-                                        w-16 h-16 flex items-center justify-center text-4xl
-                                        cursor-pointer relative transition-all duration-200
-                                        ${squareColor}
-                                        ${isSelected ? 'after:absolute after:inset-0 after:bg-yellow-400 after:opacity-30' : ''}
-                                        ${isLastMovePart ? 'after:absolute after:inset-0 after:bg-indigo-500 after:opacity-20' : ''}
-                                        ${(gameMode === 'ai-vs-ai' || (gameMode === 'ai' && currentTurn === 'b'))
-                                                            ? 'cursor-not-allowed'
-                                                            : 'hover:after:absolute hover:after:inset-0 hover:after:bg-gray-900 hover:after:opacity-10'}
-                                        group
-                                    `}
-                                                >
-                                                    <span className={`
-                                        chess-piece select-none transform transition-all duration-200
-                                        relative z-10
-                                        ${piece === piece.toUpperCase()
-                                                            ? 'text-[#FFFFFF] drop-shadow-[2px_2px_1px_rgba(0,0,0,0.5)]'
-                                                            : 'text-[#000000] drop-shadow-[1px_1px_1px_rgba(255,255,255,0.5)]'}
-                                        ${loading ? 'opacity-50' : 'opacity-100'}
-                                        ${isSelected ? 'scale-110' : ''}
-                                        ${isCheck ? 'text-red-500' : ''}
-                                        group-hover:scale-105
-                                    `}>
-                                                        {getPieceSymbol(piece)}
-                                                    </span>
+                                                const isLastMovePart = isLastMove(rowIndex, colIndex);
+                                                const isPossible = isPossibleMove(rowIndex, colIndex);
+                                                const isCheck = piece.toLowerCase() === 'k' &&
+                                                    ((currentTurn === 'w' && piece === 'K') ||
+                                                        (currentTurn === 'b' && piece === 'k')) &&
+                                                    message.includes('check');
 
-                                                    {isPossible && (
-                                                        <div className={`
-                                            absolute inset-0 flex items-center justify-center z-0
-                                            ${piece === '.'
-                                                                ? 'after:content-[""] after:absolute after:w-3 after:h-3 after:rounded-full after:bg-emerald-500 after:opacity-40'
-                                                                : 'ring-2 ring-emerald-500 ring-opacity-60 after:absolute after:inset-0 after:bg-emerald-500 after:opacity-20'}
-                                            transition-all duration-200
-                                        `} />
-                                                    )}
+                                                const squareColor = (rowIndex + colIndex) % 2 === 0
+                                                    ? 'bg-[#F0D9B5]'
+                                                    : 'bg-[#B58863]';
 
-                                                    {isLastMovePart && (
-                                                        <>
-                                                            <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-indigo-400 opacity-40"></div>
-                                                            <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-indigo-400 opacity-40"></div>
-                                                            <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-indigo-400 opacity-40"></div>
-                                                            <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-indigo-400 opacity-40"></div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                                                return (
+                                                    <div
+                                                        key={colIndex}
+                                                        onClick={() => handleSquareClick(rowIndex, colIndex)}
+                                                        className={`
+                                                w-16 h-16 flex items-center justify-center text-4xl
+                                                cursor-pointer relative transition-all duration-200
+                                                ${squareColor}
+                                                ${isSelected ? 'after:absolute after:inset-0 after:bg-yellow-400 after:opacity-30' : ''}
+                                                ${isLastMovePart ? 'after:absolute after:inset-0 after:bg-indigo-500 after:opacity-20' : ''}
+                                                ${(gameMode === 'ai-vs-ai' || (gameMode === 'ai' && currentTurn === 'b'))
+                                                                ? 'cursor-not-allowed'
+                                                                : 'hover:after:absolute hover:after:inset-0 hover:after:bg-gray-900 hover:after:opacity-10'
+                                                            }
+                                                group
+                                            `}
+                                                    >
+                                                        <span
+                                                            className={`
+                                                    chess-piece select-none transform transition-all duration-200
+                                                    relative z-10
+                                                    ${piece === piece.toUpperCase()
+                                                                    ? 'text-[#FFFFFF] drop-shadow-[2px_2px_1px_rgba(0,0,0,0.5)]'
+                                                                    : 'text-[#000000] drop-shadow-[1px_1px_1px_rgba(255,255,255,0.5)]'
+                                                                }
+                                                    ${loading ? 'opacity-50' : 'opacity-100'}
+                                                    ${isSelected ? 'scale-110' : ''}
+                                                    ${isCheck ? 'text-red-500' : ''}
+                                                    group-hover:scale-105
+                                                `}
+                                                        >
+                                                            {getPieceSymbol(piece)}
+                                                        </span>
 
-                    {/* Sidebar for captured pieces and game mode */}
-                    <div className="flex flex-col gap-8 ml-20">
-                        {/* Display captured pieces for White */}
-                        <div className="bg-white p-8 rounded-lg shadow-lg w-80 h-65 flex flex-col">
-                            {/* Cute box for label */}
-                            <div className="bg-blue-100 p-2 rounded-md mb-4 shadow-sm">
-                                <h2 className="text-lg font-semibold text-blue-700">Captured by White</h2>
-                            </div>
+                                                        {isPossible && (
+                                                            <div
+                                                                className={`
+                                                        absolute inset-0 flex items-center justify-center z-0
+                                                        ${piece === '.'
+                                                                        ? 'after:content-[""] after:absolute after:w-3 after:h-3 after:rounded-full after:bg-emerald-500 after:opacity-40'
+                                                                        : 'ring-2 ring-emerald-500 ring-opacity-60 after:absolute after:inset-0 after:bg-emerald-500 after:opacity-20'
+                                                                    }
+                                                        transition-all duration-200
+                                                    `}
+                                                            />
+                                                        )}
 
-                            {/* Captured pieces */}
-                            <div className="flex flex-wrap gap-2 justify-center">
-                                {capturedWhitePieces.map((piece, index) => (
-                                    <span key={index} className="text-4xl">
-                                        {getPieceSymbol(piece)}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-
-
-                        {/* Display captured pieces for Black */}
-                        <div className="bg-white p-8 rounded-lg shadow-lg w-80 h-65 flex flex-col">
-                            {/* Cute box for label */}
-                            <div className="bg-red-100 p-2 rounded-md mb-4 shadow-sm">
-                                <h2 className="text-lg font-semibold text-red-700">Captured by Black</h2>
-                            </div>
-
-                            {/* Captured pieces */}
-                            <div className="flex flex-wrap gap-2 justify-center">
-                                {capturedBlackPieces.map((piece, index) => (
-                                    <span key={index} className="text-4xl">
-                                        {getPieceSymbol(piece)}
-                                    </span>
-                                ))}
+                                                        {isLastMovePart && (
+                                                            <>
+                                                                <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-indigo-400 opacity-40"></div>
+                                                                <div className="absolute top-0 right-0 w-2 h-2 border-t-2 border-r-2 border-indigo-400 opacity-40"></div>
+                                                                <div className="absolute bottom-0 left-0 w-2 h-2 border-b-2 border-l-2 border-indigo-400 opacity-40"></div>
+                                                                <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-indigo-400 opacity-40"></div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
+                        {/* Sidebar for Captured Pieces and Game Mode */}
+                        <div className="flex flex-col gap-8 ml-24"> {/* Increased ml from ml-20 to ml-24 to shift sidebar slightly right */}
+                            {/* Captured Pieces by White */}
+                            <div className="bg-white p-8 rounded-lg shadow-lg w-80 h-65 flex flex-col">
+                                {/* Label */}
+                                <div className="bg-blue-100 p-2 rounded-md mb-4 shadow-sm">
+                                    <h2 className="text-lg font-semibold text-blue-700">Captured by White</h2>
+                                </div>
 
-                        {/* Game mode indicator */}
-                        <div className="bg-white p-4 rounded-lg shadow-lg text-center">
-                            <h2 className="text-sm font-semibold text-gray-700">Game Mode</h2>
-                            <p className="text-base font-medium bg-gray-100 py-1 px-2 rounded">
-                                {gameMode === 'human' ? 'Human vs Human' :
-                                    gameMode === 'ai' ? 'Human vs AI' : 'AI vs AI'}
-                            </p>
+                                {/* Captured Pieces */}
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    {capturedWhitePieces.map((piece, index) => (
+                                        <span key={index} className="text-4xl">
+                                            {getPieceSymbol(piece)}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Captured Pieces by Black */}
+                            <div className="bg-white p-8 rounded-lg shadow-lg w-80 h-65 flex flex-col">
+                                {/* Label */}
+                                <div className="bg-red-100 p-2 rounded-md mb-4 shadow-sm">
+                                    <h2 className="text-lg font-semibold text-red-700">Captured by Black</h2>
+                                </div>
+
+                                {/* Captured Pieces */}
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    {capturedBlackPieces.map((piece, index) => (
+                                        <span key={index} className="text-4xl">
+                                            {getPieceSymbol(piece)}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Game Mode Indicator */}
+                            <div className="bg-white p-4 rounded-lg shadow-lg text-center">
+                                <h2 className="text-sm font-semibold text-gray-700">Game Mode</h2>
+                                <p className="text-base font-medium bg-gray-100 py-1 px-2 rounded">
+                                    {gameMode === 'human' ? 'Human vs Human' :
+                                        gameMode === 'ai' ? 'Human vs AI' : 'AI vs AI'}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
-
             </div>
 
+
+            {/* Game Result Modal */}
             {gameResult && (
                 <div className="mt-8 p-6 bg-gradient-to-r from-yellow-50 to-yellow-100 
                                rounded-xl border border-yellow-200 shadow-lg text-center
@@ -602,18 +614,18 @@ const ChessBoard = () => {
                         <button
                             onClick={() => startNewGame('human')}
                             className="px-6 py-3 bg-yellow-600 text-white rounded-lg 
-                                     hover:bg-yellow-700 transition-all duration-200 
-                                     shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
-                                     font-semibold"
+                                       hover:bg-yellow-700 transition-all duration-200 
+                                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                                       font-semibold"
                         >
                             New Human Game
                         </button>
                         <button
                             onClick={() => startNewGame('ai')}
                             className="px-6 py-3 bg-green-600 text-white rounded-lg 
-                                     hover:bg-green-700 transition-all duration-200 
-                                     shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
-                                     font-semibold"
+                                       hover:bg-green-700 transition-all duration-200 
+                                       shadow-lg hover:shadow-xl transform hover:-translate-y-0.5
+                                       font-semibold"
                         >
                             Play vs AI
                         </button>
@@ -621,6 +633,7 @@ const ChessBoard = () => {
                 </div>
             )}
 
+            {/* Promotion Modal */}
             {promotionModal.isVisible && (
                 <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
                     <div className="bg-white p-6 rounded-lg shadow-lg">
