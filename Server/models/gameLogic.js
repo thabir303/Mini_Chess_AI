@@ -154,12 +154,12 @@ function getBestMove(game, gameMode = 'human', timeLimit = 4000) {
     const startTime = Date.now();
     const endTime = startTime + timeLimit;
     let bestMove = null;
-    let depth = gameMode === 'ai-vs-ai' ? 8 : 3;
+    let depth = gameMode === 'ai-vs-ai' ? 10 : 3;
     const useQuiescence = gameMode === 'ai-vs-ai';
 
     try {
         transpositionTable.clear();
-        while (Date.now() < endTime && depth <= (gameMode === 'ai-vs-ai' ? 10 : 3)) {
+        while (Date.now() < endTime && depth <= (gameMode === 'ai-vs-ai' ? 12 : 3)) {
             const result = alphaBeta(
                 game,
                 depth,
