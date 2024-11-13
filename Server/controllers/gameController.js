@@ -1,6 +1,13 @@
 // /Server/controllers/gameController.js
 
-const { createGame, getBestMove, isCheck, generateMoves, cloneGame } = require('../models/gameLogic');
+const {
+    createGame,
+    getBestMove,
+    isCheck,
+    generateMoves,
+    cloneGame,
+    evaluateBoard // Add this if you use evaluateBoard here
+} = require('../models/gameLogic');
 
 const gameController = {
     startGame: (req, res) => {
@@ -21,13 +28,14 @@ const gameController = {
 
             // If the game mode is AI vs AI, make the first AI move automatically
             if (gameMode === 'ai-vs-ai') {
-                const aiMove = getBestMove(game);
-                if (aiMove) {
-                    const moveResult = game.makeMove(aiMove);
+                const { bestMove, evaluation } = getBestMove(game); // Extract bestMove and evaluation
+                if (bestMove) {
+                    const moveResult = game.makeMove(bestMove);
                     response.board = game.board;
                     response.turn = game.turn;
-                    response.lastMove = aiMove;
+                    response.lastMove = bestMove;
                     response.message = moveResult.message;
+                    response.evaluation = evaluation; // Include evaluation if needed
                 }
             }
 
@@ -41,6 +49,8 @@ const gameController = {
     playMove: async (req, res) => {
         try {
             const { board, move, turn, gameMode = 'human' } = req.body;
+
+            console.log('Received move:', move);
 
             // Validate input fields
             if (!board || !move || !turn) {
@@ -85,29 +95,39 @@ const gameController = {
 
                 // For Human vs AI, make AI's move if it's the AI's turn
                 if (gameMode === 'ai' && game.turn === 'b') {
-                    const aiMove = getBestMove(game);
-                    if (aiMove) {
-                        const aiMoveResult = game.makeMove(aiMove);
+                    const {bestMove, evaluation} = getBestMove(game); 
+                    // const aiMove = getBestMove(game);
+                    if (bestMove) {
+                        const aiMoveResult = game.makeMove(bestMove);
                         response.board = game.board;
                         response.turn = game.turn;
-                        response.lastMove = aiMove;
+                        response.lastMove = bestMove;
                         response.isGameOver = aiMoveResult.isOver;
                         response.message = aiMoveResult.message;
                         response.gameStatus = aiMoveResult;
+                        response.evaluation = evaluation;
+                        if (aiMoveResult.captured) {
+                            response.capturedPiece = aiMoveResult.captured;
+                        }
                     }
                 }
                 // For AI vs AI, make both moves automatically
                 else if (gameMode === 'ai-vs-ai') {
-                    const aiMove = getBestMove(game);
-                    if (aiMove) {
-                        const aiMoveResult = game.makeMove(aiMove);
+                    const { bestMove, evaluation } = getBestMove(game);
+                    if (bestMove) {
+                        const aiMoveResult = game.makeMove(bestMove);
                         response.board = game.board;
                         response.turn = game.turn;
-                        response.lastMove = aiMove;
+                        response.lastMove = bestMove;
                         response.isGameOver = aiMoveResult.isOver;
                         response.message = aiMoveResult.message;
                         response.gameStatus = aiMoveResult;
+                        response.evaluation = evaluation;
+                        if (aiMoveResult.captured) {
+                            response.capturedPiece = aiMoveResult.captured;
+                        }
                     }
+                    
                 }
 
                 return res.status(200).json(response);
@@ -191,6 +211,51 @@ const gameController = {
             res.status(400).json({ error: error.message });
         }
     },
+    aiMove: async (req, res) => {
+        try {
+            const { board, turn, gameMode = 'ai' } = req.body;
+
+            if (!board || !turn) {
+                return res.status(400).json({ 
+                    error: 'Missing required fields. Need board and turn.' 
+                });
+            }
+
+            const game = createGame();
+            game.board = board;
+            game.turn = turn;
+
+            const { bestMove, evaluation } = getBestMove(game);
+
+            if (bestMove) {
+                const aiMoveResult = game.makeMove(bestMove);
+
+                const response = {
+                    board: game.board,
+                    turn: game.turn,
+                    move: bestMove,
+                    isGameOver: aiMoveResult.isOver,
+                    message: aiMoveResult.message,
+                    gameStatus: aiMoveResult,
+                    evaluation: evaluation,
+                };
+
+                if (aiMoveResult.captured) {
+                    response.capturedPiece = aiMoveResult.captured;
+                }
+
+                return res.status(200).json(response);
+            } else {
+                return res.status(400).json({ error: 'No valid moves available for AI' });
+            }
+
+        } catch (error) {
+            console.error('Error processing AI move:', error);
+            res.status(500).json({ 
+                error: 'Internal server error while processing AI move'
+            });
+        }
+    },
 
     getAIMove: async (req, res) => {
         try {
@@ -235,104 +300,33 @@ const gameController = {
 
             let aiMove = null;
             let moveResult = null;
-            const maxAttempts = 3;
             const timeLimit = gameMode === 'ai-vs-ai' ? 2000 : 3000;
 
-            // If in check, handle it with priority
-            if (isCheck(game, turn)) {
-                const allMoves = generateMoves(game, turn);
+            // Use the updated getBestMove function
+            const { bestMove, evaluation } = getBestMove(game, timeLimit);
 
-                // First try moves that capture attacking pieces
-                const capturingMoves = allMoves.filter(move => {
-                    const targetSquare = game.board[move.to[0]][move.to[1]];
-                    return targetSquare !== '.';
-                });
+            if (bestMove) {
+                try {
+                    // Attempt to make the AI's move
+                    moveResult = game.makeMove(bestMove);
+                    aiMove = bestMove;
+                } catch (error) {
+                    console.error('Error making AI move:', error);
+                }
+            }
 
-                // Try capturing moves first
-                for (const move of capturingMoves) {
-                    const gameCopy = cloneGame(game);
+            // If no valid move found, try any legal move
+            if (!aiMove || !moveResult) {
+                const moves = generateMoves(game, turn);
+                for (const move of moves) {
                     try {
+                        const gameCopy = cloneGame(game);
                         gameCopy.makeMove(move);
-                        if (!isCheck(gameCopy, turn)) {
-                            aiMove = move;
-                            moveResult = game.makeMove(move);
-                            break;
-                        }
+                        moveResult = game.makeMove(move);
+                        aiMove = move;
+                        break;
                     } catch (error) {
                         continue;
-                    }
-                }
-
-                // If no capturing moves work, try all other moves
-                if (!aiMove) {
-                    for (const move of allMoves) {
-                        const gameCopy = cloneGame(game);
-                        try {
-                            gameCopy.makeMove(move);
-                            if (!isCheck(gameCopy, turn)) {
-                                aiMove = move;
-                                moveResult = game.makeMove(move);
-                                break;
-                            }
-                        } catch (error) {
-                            continue;
-                        }
-                    }
-                }
-
-                // If still no valid move, it's checkmate
-                if (!aiMove) {
-                    const status = {
-                        isOver: true,
-                        result: 'checkmate',
-                        winner: turn === 'w' ? 'b' : 'w',
-                        message: `Checkmate! ${turn === 'w' ? 'Black' : 'White'} wins!`
-                    };
-                    return res.status(200).json({
-                        board: game.board,
-                        turn: game.turn,
-                        isGameOver: true,
-                        gameStatus: status
-                    });
-                }
-            } else {
-                // Not in check, try to make best move
-                for (let attempt = 0; attempt < maxAttempts && !aiMove; attempt++) {
-                    try {
-                        const gameCopy = cloneGame(game);
-                        const possibleMove = getBestMove(gameCopy, timeLimit);
-                        
-                        if (possibleMove) {
-                            // Validate move before making it
-                            const validMoves = game.getValidMoves([possibleMove.from[0], possibleMove.from[1]]);
-                            const isValidMove = validMoves.some(m =>
-                                m.to[0] === possibleMove.to[0] && m.to[1] === possibleMove.to[1]
-                            );
-
-                            if (isValidMove) {
-                                moveResult = game.makeMove(possibleMove);
-                                aiMove = possibleMove;
-                                break;
-                            }
-                        }
-                    } catch (error) {
-                        continue;
-                    }
-                }
-
-                // If still no move found, try any valid move
-                if (!aiMove) {
-                    const moves = generateMoves(game, turn);
-                    for (const move of moves) {
-                        try {
-                            const gameCopy = cloneGame(game);
-                            gameCopy.makeMove(move);
-                            aiMove = move;
-                            moveResult = game.makeMove(move);
-                            break;
-                        } catch (error) {
-                            continue;
-                        }
                     }
                 }
             }
@@ -349,9 +343,10 @@ const gameController = {
                 });
             }
 
-            // Success response
+            // Success response including the evaluation value
             return res.status(200).json({ 
                 move: aiMove,
+                evaluation, // Include the evaluation in the response
                 board: game.board,
                 turn: game.turn,
                 isGameOver: moveResult.isOver,
@@ -367,7 +362,7 @@ const gameController = {
                 details: error.message
             });
         }
-    }
+    },
 };
 
 module.exports = gameController;

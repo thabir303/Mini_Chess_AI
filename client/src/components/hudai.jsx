@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { FaChess, FaRobot, FaUserFriends } from 'react-icons/fa';
+import {  FaRobot, FaUserFriends } from 'react-icons/fa';
 import ChessLogo from './Chess1.png'
 
 const ChessBoard = () => {
@@ -77,7 +77,9 @@ const ChessBoard = () => {
                 if (response.data.capturedPiece) {
                     updateCapturedPieces(response.data.capturedPiece);
                 }
-
+                if (response.data.evaluation !== undefined) {
+                    setEvaluation(response.data.evaluation);
+                }
 
                 // Handle game end condition
                 if (response.data.gameStatus && response.data.gameStatus.isOver) {
